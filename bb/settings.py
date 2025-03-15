@@ -19,12 +19,11 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/3.0/howto/deployment/checklist/
-#with open('/etc/config.json') as config_file:
-    #config = json.load(config_file)
+# config = json.load(open('/etc/config.json')) if os.path.exists('/etc/config.json') else {}
 
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'ohhdsmr0ua_*1$jcgl0vxk+0@5q4z*5+e#7f^zgx!t#*jw&xf1'
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'insecure-dev-only-change-me')
 
 # SECURITY WARNING: don't   run with debug turned on in production!
 DEBUG = True
@@ -149,4 +148,4 @@ EMAIL_USE_TLS = True
 #EMAIL_HOST_PASSWORD = config['EMAIL_PASS']
 
 
-ARBKEY = ''
+ARBKEY = os.environ.get('ARB_API_KEY', '')

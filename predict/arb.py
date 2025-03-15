@@ -1,4 +1,3 @@
-from typing import Iterable, Generator
 import time
 import requests
 from itertools import chain
@@ -11,6 +10,62 @@ except ImportError:
 
 BASE_URL = "api.the-odds-api.com/v4"
 PROTOCOL = "https://"
+
+BOOKMAKER_MAPPING = {
+    'DraftKings': 'draftkings',
+    'FanDuel': 'fanduel',
+    'Unibet': 'unibet_us',
+    'MyBookie.ag': 'mybookieag',
+    'BetMGM': 'betmgm',
+    'Caesars': 'williamhill_us',
+    'Bovada': 'bovada',
+    'PointsBet (US)': 'pointsbetus',
+    'WynnBET': 'wynnbet',
+    'BetRivers': 'betrivers',
+    'BetUS': 'betus',
+    'SuperBook': 'superbook',
+    'BetOnline.ag': 'betonlineag',
+    'LowVig.ag': 'lowvig',
+    '888sport': 'sport888',
+    'Betfair Exchange': 'betfair_ex_uk',
+    'Betfair Sportsbook': 'betfair_sb_uk',
+    'Bet Victor': 'betvictor',
+    'Betway': 'betway',
+    'BoyleSports': 'boylesports',
+    'Casumo': 'casumo',
+    'Coral': 'coral',
+    'Grosvenor': 'grosvenor',
+    'Ladbrokes': 'ladbrokes_uk',
+    'LeoVegas': 'leovegas',
+    'LiveScore Bet': 'livescorebet',
+    'Matchbook': 'matchbook',
+    'Mr Green': 'mrgreen',
+    'Paddy Power': 'paddypower',
+    'Sky Bet': 'skybet',
+    'Unibet': 'unibet_uk',
+    'Virgin Bet': 'virginbet',
+    'William Hill (UK)': 'williamhill',
+    '1xBet': 'onexbet',
+    'Betclic': 'betclic',
+    'Betsson': 'betsson',
+    'Coolbet': 'coolbet',
+    'Everygame': 'everygame',
+    'Livescorebet (EU)': 'livescorebet_eu',
+    'Marathon Bet': 'marathonbet',
+    'NordicBet': 'nordicbet',
+    'Pinnacle': 'pinnacle',
+    'Suprabets': 'suprabets',
+    'William Hill': 'williamhill',
+    'Betr': 'betr_au',
+    'BlueBet': 'bluebet',
+    'Ladbrokes': 'ladbrokes_au',
+    'Neds': 'neds',
+    'PlayUp': 'playup',
+    'PointsBet (AU)': 'pointsbetau',
+    'SportsBet': 'sportsbet',
+    'TAB': 'tab',
+    'TopSport': 'topsport',
+}
 
 
 class APIException(RuntimeError):
@@ -87,7 +142,7 @@ def process_data(matches, include_started_matches = True):
         match_name = f"{match['home_team']} v. {match['away_team']}"
         time_to_start = (start_time - time.time())/3600
         league = match["sport_key"]
-        event_id = match.get('id')  # Extracting the event ID
+        event_id = match.get('id', '')
 
         yield {
             "match_name": match_name,
@@ -100,7 +155,7 @@ def process_data(matches, include_started_matches = True):
         }
 
 
-def get_arbitrage_opportunities(key, region, cutoff,):
+def get_arbitrage_opportunities(key, region, cutoff):
     sports = get_sports(key)
     data = chain.from_iterable(get_data(key, sport, region=region) for sport in sports)
     data = filter(lambda x: x != "message", data)
@@ -112,57 +167,8 @@ def get_arbitrage_opportunities(key, region, cutoff,):
     return arbitrage_opportunities
 
 def get_updated_odds(event_id, bookmaker_titles, key):
-    # Convert bookmaker titles to API keys
-    bookmaker_mapping = {'DraftKings': 'draftkings', 'FanDuel': 'fanduel', 'Unibet': 'unibet_us', 'MyBookie.ag': 'mybookieag', 'BetMGM': 'betmgm', 'Caesars': 'williamhill_us', 'Bovada': 'bovada', 'PointsBet (US)': 'pointsbetus', 'WynnBET': 'wynnbet', 'BetRivers': 'betrivers', 'BetUS': 'betus', 'SuperBook': 'superbook', 'BetOnline.ag': 'betonlineag', 'LowVig.ag': 'lowvig',
-                        
-                        '888sport': 'sport888',
-                        'Betfair Exchange': 'betfair_ex_uk',
-                        'Betfair Sportsbook': 'betfair_sb_uk',
-                        'Bet Victor': 'betvictor',
-                        'Betway': 'betway',
-                        'BoyleSports': 'boylesports',
-                        'Casumo': 'casumo',
-                        'Coral': 'coral',
-                        'Grosvenor': 'grosvenor',
-                        'Ladbrokes': 'ladbrokes_uk',
-                        'LeoVegas': 'leovegas',
-                        'LiveScore Bet': 'livescorebet',
-                        'Matchbook': 'matchbook',
-                        'Mr Green': 'mrgreen',
-                        'Paddy Power': 'paddypower',
-                        'Sky Bet': 'skybet',
-                        'Unibet': 'unibet_uk',
-                        'Virgin Bet': 'virginbet',
-                        'William Hill (UK)': 'williamhill',
-                        '1xBet': 'onexbet',
-                        'Betclic': 'betclic',
-                        'BetOnline.ag': 'betonlineag',
-                        'Betsson': 'betsson',
-                        'Coolbet': 'coolbet',
-                        'Everygame': 'everygame',
-                        'Livescorebet (EU)': 'livescorebet_eu',
-                        'Marathon Bet': 'marathonbet',
-                        'MyBookie.ag': 'mybookieag',
-                        'NordicBet': 'nordicbet',
-                        'Pinnacle': 'pinnacle',
-                        'Suprabets': 'suprabets',
-                        'Unibet': 'unibet',
-                        'William Hill': 'williamhill',
-                        'Betr': 'betr_au',
-                        'BlueBet': 'bluebet',
-                        'Ladbrokes': 'ladbrokes_au',
-                        'Neds': 'neds',
-                        'PlayUp': 'playup',
-                        'PointsBet (AU)': 'pointsbetau',
-                        'SportsBet': 'sportsbet',
-                        'TAB': 'tab',
-                        'TopSport': 'topsport',
-                        
-                        }
+    bookmaker_keys = [BOOKMAKER_MAPPING.get(title) for title in bookmaker_titles if title in BOOKMAKER_MAPPING]
 
-    bookmaker_keys = [bookmaker_mapping.get(title) for title in bookmaker_titles if title in bookmaker_mapping]
-
-    # Construct the URL for the API request
     url = f"{PROTOCOL}{BASE_URL}/sports/upcoming/odds/"
     querystring = {
         "apiKey": key,
@@ -173,55 +179,33 @@ def get_updated_odds(event_id, bookmaker_titles, key):
         "bookmakers": ','.join(bookmaker_keys)
     }
 
-    print(f"URL: {url}")
-    print(f"Querystring: {querystring}")
-
-    # Make the API request
     response = requests.get(url, params=querystring)
-    print(f"API Response: {response.text}")
 
     if response.status_code != 200:
         handle_faulty_response(response)
 
-    print('made request good to go')
-
-    # Parse and return the response
     odds_data = response.json()
     return process_event_odds_data(odds_data, event_id, bookmaker_keys)
 
 
 
 def process_event_odds_data(odds_data, event_id, bookmakers):
-    # Initialize an empty dictionary to store structured odds
     structured_odds = {}
-    print('forming request')
 
-    # Loop through each game in the odds data
     for game in odds_data:
-        print('didnt found game ',game["id"])
-
         if game["id"] == event_id:
-            # Initialize an empty dictionary to store odds for this game
             game_odds = {}
-            print('found game ',game["id"])
-            print('bookmaker:' ,game["bookmakers"])
 
-            # Loop through each bookmaker in the game data
             for bookmaker in game["bookmakers"]:
-                # Check if this bookmaker is one of the specified bookmakers
-                print(bookmakers)
-                print(bookmaker["key"])
                 if bookmaker["key"] in bookmakers:
-                    # Extract and store the odds from this bookmaker
                     game_odds[bookmaker["key"]] = bookmaker["markets"]
 
-            # Check if we have found any odds for the specified bookmakers
             if game_odds:
                 structured_odds[game["id"]] = {
                     "home_team": game["home_team"],
                     "away_team": game["away_team"],
                     "odds": game_odds
                 }
-                break  # Break the loop as we have found the required game
+                break
 
     return structured_odds

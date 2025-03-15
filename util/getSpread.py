@@ -1,25 +1,14 @@
-import requests,random
+import os
+import requests
 
 
-
-
-
-def reqSpread(url):
+def req_spread(url):
     r = requests.get(url)
     return r.json()
 
 
-
-def getSpread(h,v):
-    keys = ['f003fe2f0e443e7bfece9c357b90c20d',
-            'ea5ba76fd8807efa3b484121888f0f70',
-            'ccd995270783b8fd83bef5a433877e9f',
-            '790780270afebabec377041febe25c8a',
-            '463ef39f21a0ecba3cf87bcbd280fb2f'
-    ]
-    key = random.choice(keys)
-    spreadURL = 'https://api.the-odds-api.com/v4/sports/basketball_nba/odds?markets=h2h,spreads,totals&regions=us&apiKey='+key
-    print('spread url',spreadURL)
+def getSpread(abv_home, abv_visitor):
+    api_key = os.environ.get('ODDS_API_KEY', '')
     CHOICES = {
     'ATL' :'Atlanta Hawks',
     'BKN':	'Brooklyn Nets',
@@ -52,45 +41,43 @@ def getSpread(h,v):
     'UTA':	'Utah Jazz',
     'WAS':	'Washington Wizards',
     }
-    h = CHOICES[h]
-    v = CHOICES[v]
-    spreadr = reqSpread(spreadURL)
+    TEAM_NAMES = CHOICES
+    home_full = TEAM_NAMES[abv_home]
+    visitor_full = TEAM_NAMES[abv_visitor]
 
-    vistorSpread = 0
-    homeSpread = 0
-    dk_vistorSpread = 0
-    dk_homeSpread = 0
+    url = f'https://api.the-odds-api.com/v4/sports/basketball_nba/odds?markets=h2h,spreads,totals&regions=us&apiKey={api_key}'
+    spread_data = req_spread(url)
 
-    for provider in spreadr:
+    home_spread = 0
+    visitor_spread = 0
+    dk_home_spread = 0
+    dk_visitor_spread = 0
+
+    for provider in spread_data:
         for game in provider['bookmakers']:
             if game['title'] == 'FanDuel':
-                if game['markets'][1]['outcomes'][0]['name'] == v and game['markets'][1]['outcomes'][1]['name'] == h:
-                    print(game['markets'][1]['outcomes'][0])
-                    vistorSpread = game['markets'][1]['outcomes'][0]['point']
-                    homeSpread = game['markets'][1]['outcomes'][1]['point']
+                outcomes = game['markets'][1]['outcomes']
+                if outcomes[0]['name'] == visitor_full and outcomes[1]['name'] == home_full:
+                    visitor_spread = outcomes[0]['point']
+                    home_spread = outcomes[1]['point']
                     break
-                if game['markets'][1]['outcomes'][0]['name'] == h and game['markets'][1]['outcomes'][1]['name'] == v:
-                    print(game['markets'])
-
-                    homeSpread = game['markets'][1]['outcomes'][0]['point']
-                    vistorSpread = game['markets'][1]['outcomes'][1]['point']
+                if outcomes[0]['name'] == home_full and outcomes[1]['name'] == visitor_full:
+                    home_spread = outcomes[0]['point']
+                    visitor_spread = outcomes[1]['point']
                     break
 
-    for provider in spreadr:
+    for provider in spread_data:
         for game in provider['bookmakers']:
             if game['title'] == 'DraftKings':
-                if game['markets'][1]['outcomes'][0]['name'] == v and game['markets'][1]['outcomes'][1]['name'] == h:
-                    print(game['markets'])
-
-                    dk_vistorSpread = game['markets'][1]['outcomes'][0]['point']
-                    dk_homeSpread = game['markets'][1]['outcomes'][1]['point']
+                outcomes = game['markets'][1]['outcomes']
+                if outcomes[0]['name'] == visitor_full and outcomes[1]['name'] == home_full:
+                    dk_visitor_spread = outcomes[0]['point']
+                    dk_home_spread = outcomes[1]['point']
                     break
-                if game['markets'][1]['outcomes'][0]['name'] == h and game['markets'][1]['outcomes'][1]['name'] == v:
-                    dk_homeSpread = game['markets'][1]['outcomes'][0]['point']
-                    dk_vistorSpread = game['markets'][1]['outcomes'][1]['point']
+                if outcomes[0]['name'] == home_full and outcomes[1]['name'] == visitor_full:
+                    dk_home_spread = outcomes[0]['point']
+                    dk_visitor_spread = outcomes[1]['point']
                     break
 
-    print(h,homeSpread,' - ',v,vistorSpread)
-    return [homeSpread,vistorSpread,dk_homeSpread,dk_vistorSpread]
+    return [home_spread, visitor_spread, dk_home_spread, dk_visitor_spread]
 
-getSpread('BOS','CHA')

@@ -1,40 +1,53 @@
-from __future__ import absolute_import, division, print_function, unicode_literals
-from datetime import datetime, timedelta
-from pytz import timezone
-import webData
-import webTrain
-from django.db.models import Q
-from django.shortcuts import render, get_object_or_404, redirect
-from django.urls import reverse
-from django.template import loader
-from django.http import HttpResponse, HttpResponseRedirect
-from django.views.generic import ListView
-from django.views.generic import CreateView
-from django.contrib.auth.models import User
-from django.core.paginator import Paginator
-from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
-from django.contrib.auth.decorators import login_required
-from django.http.response import HttpResponsePermanentRedirect
-from .models import Game,TensorflowModel,PermaGame, Retrain,ModelReset
-from users.models import Profile, Message,StripeCustomer
-
-from tensorflow.keras import *
-from tensorflow.keras.callbacks import TensorBoard, EarlyStopping, ModelCheckpoint
-from sklearn.model_selection import train_test_split
-import tensorflow as tf
-
-
-import requests, json, time, operator, pickle, random,os,shutil
+import csv
 import functools
+import json
+import operator
+import os
+import pickle
+import random
+import re
+import shutil
+import time
+from datetime import datetime, timedelta
+
+import asyncio
+import aiohttp
 import numpy as np
 import pandas as pd
-import csv
+import requests
+import stripe
 
+import tensorflow as tf
+from tensorflow.keras.callbacks import TensorBoard, EarlyStopping, ModelCheckpoint
+from sklearn.model_selection import train_test_split
 
+from dateutil.parser import parse
+from backports.zoneinfo import ZoneInfo
+from pytz import timezone
 
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
+from django.contrib.auth.models import User
+from django.core.paginator import Paginator
+from django.db.models import Count, Sum
+from django.db.models.fields import DateField, FloatField
+from django.db.models.functions import Cast, TruncDay
+from django.db.models import Q
+from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
+from django.http.response import HttpResponsePermanentRedirect
+from django.shortcuts import render, get_object_or_404, redirect
+from django.template import loader
+from django.urls import reverse
+from django.views.generic import CreateView, ListView
 
+from bb import settings
+import retrain
+import webData
+import webTrain
+from .arb import get_arbitrage_opportunities, get_updated_odds
+from .models import Game, TensorflowModel, PermaGame, Retrain, ModelReset
+from users.models import Profile, Message, StripeCustomer
 
-#stats for season averages
 labels = ['ast','blk','dreb','fg3_pct','fg3a','fg3m','fga','fgm','fta','ftm','oreb','pf','pts','reb','stl', 'turnover', 'min']
 #number of top players input for each game
 playersPerTeam = 7
@@ -106,61 +119,25 @@ TEAMCOLORS = {
 }
 
 
-
-
-from .arb import get_arbitrage_opportunities,get_updated_odds
-
-from django.http import JsonResponse
-import asyncio
-import aiohttp
-from datetime import datetime, timedelta
-from django.http import JsonResponse
-import requests
-from datetime import datetime, timedelta
-
-
-from operator import itemgetter
-from django.core.paginator import Paginator
-
-
-
-
-
-
-from django.db.models import Count, Sum, FloatField
-from django.db.models.functions import Cast, TruncDay
-from django.db.models.fields import DateField
-
-
-
-
-
-
-
 def tos_auth(request):
     context={}
     return render(request, 'predict/tos-auth.html', context)
 
 
-
 def props(request):
     context = {}
-    #save_obj({},'cs_cache')
     players = getProps()
 
     obj = load_obj('2019PlayerNamesByID')#load saved player names by id
 
     for player in players:
         player_id = ''
-        for id in obj:#look for player id
-            if obj[id] == player:#convert ' apostrophe with - dash
-                player_id = id#found player id
+        for pid in obj:
+            if obj[pid] == player:
+                player_id = pid
                 break
-        #print(player_id,player)
         players[player]['id']=player_id
-    
-    #players = calculateHistory(players)
-    #save_obj(players,'player-props')
+
     players = load_obj('player-props')
 
     obj = load_obj('2019PlayerNamesByID')
@@ -173,17 +150,15 @@ def props(request):
     for key in keys_to_remove:
         del players[key]
     for player in players:
-        print(player)
-        print(players[player]['id'])
         playerId = players[player]['id']
 
         #set season average
         context['team'] = 0
         #get team
         for team in playerIdByTeamID:
-            for id in playerIdByTeamID[team]:
+            for pid in playerIdByTeamID[team]:
 
-                if str(playerId) == str(id):
+                if str(playerId) == str(pid):
                     players[player]['team'] = team
                     players[player]['team_name'] = teamNamesbyID[int(team)]
                     players[player]['abv'] = teamAbvById[int(team)]
@@ -191,11 +166,9 @@ def props(request):
             data = getPlayerInfo(players[player]['abv'],player)
             players[player]['data'] = data
         except KeyError:
-            print('failed to get data')
             continue
 
     context['props'] = players
-    #print(players)
 
 
     return render(request, 'predict/props.html', context)
@@ -211,7 +184,6 @@ def calculateHistory(players):
         lg10 = lg_prop(players[playerId]['id'])
         if lg10 is False:
             continue
-        print('lg10------------------',lg10)
         astcount = 0
         asthit = 0
         ptscount = 0
@@ -220,8 +192,6 @@ def calculateHistory(players):
         rebhit = 0
         push = 0
         for game in lg10:
-            print(game)
-            print(game['stats'])
             try:
                 try:
                     labels = ['ast','blk','dreb','fg3_pct','fg3a','fg3m','fga','fgm','fta','ftm','oreb','pf','pts','reb','stl', 'turnover', 'min']
@@ -244,21 +214,18 @@ def calculateHistory(players):
                         rebhit+=1
                     else:
                         rebcount+=1
-                    
+
                     if float(pts) >= float(players[playerId]['pts']):
                         ptscount+=1
                         ptshit+=1
                     else:
                         ptscount+=1
                 except KeyError :
-                    #print('key errorrr')
                     push+=1
-                    continue
-                    x = None
                     continue
             except IndexError:
                 continue
-            
+
         players[playerId]['astcount']=astcount
         players[playerId]['asthit']=asthit
         players[playerId]['rebcount']=rebcount
@@ -272,14 +239,11 @@ def calculateHistory(players):
     return players
 
 def lg_prop(playerId):
-    #save_obj({},'lg-cache')
 
     context={}
     context['id'] = playerId
     context['labels'] = labels
     #requesting api for updated player info
-    #url = 'https://www.balldontlie.io/api/v1/players/' + str(playerId)
-    #r = req(url)
     #setting context from request
     context['weight_pounds'] = 0
     context['height_feet'] = 0
@@ -300,26 +264,24 @@ def lg_prop(playerId):
     context['team'] = 0
     #get team
     for team in playerIdByTeamID:
-        for id in playerIdByTeamID[team]:
+        for pid in playerIdByTeamID[team]:
 
-            if str(playerId) == str(id):
+            if str(playerId) == str(pid):
                 context['team'] = team
                 context['team_name'] = teamNamesbyID[int(team)]
                 context['abv'] = teamAbvById[int(team)]
 
     current_date = datetime.now().strftime('%Y-%m-%d')
-    #save_obj({},'lg-cache')
 
     lgcache = load_obj('lg-cachep')
-    lg =  getLast10Games(context['team'],current_date)    
-    print(lg)
+    lg =  getLast10Games(context['team'],current_date)
     try:
         lg1id = lg[0]
         lg2id = lg[1]
     except IndexError:
         return False
     lg10 = []
-    for id in lg:
+    for game_id in lg:
         try:
             r = lgcache[id]
         except KeyError:
@@ -329,30 +291,27 @@ def lg_prop(playerId):
             save_obj(lgcache,'lg-cachep')
 
         lg10.append(playerlg(r, playerId,context['team']))
-    
+
     lg1 = None
     lg2 = None
     try:
         lg1 = lgcache[lg1id]
     except KeyError:
         lg1 = 'https://www.balldontlie.io/api/v1/stats?game_ids[]='+str(lg1id)+'&per_page=100'
-        print(lg1)
         lg1 = req(lg1)
         lgcache[lg1id] = lg1
     try:
         lg2 = lgcache[lg2id]
     except KeyError:
         lg2 = 'https://www.balldontlie.io/api/v1/stats?game_ids[]='+str(lg2id)+'&per_page=100'
-        print(lg2)
         lg2 = req(lg2)
         lgcache[lg2id] = lg2
 
-    print('lg ids:',lg1id,lg2id)    
     save_obj(lgcache, 'lg-cachep')
     lg1 = playerlg(lg1, playerId,context['team'])
     lg2 = playerlg(lg2, playerId,context['team'])
     #get player api data
-   
+
     context['lg1_stats']=lg1['stats']
     context['lg1_date']=lg1['date']
     context['lg1_score']=lg1['score']
@@ -374,32 +333,18 @@ def lg_prop(playerId):
 
 def getProps():
 
-    API_KEY = '75564b9a6ea7c8166c093e873b03186f'
+    API_KEY = os.environ.get('ODDS_API_KEY', '')
 
     SPORT_KEY = 'basketball_nba'
     markets = ['player_points', 'player_rebounds', 'player_assists']
     region = 'us'
 
     #------------------------------------------------------------------------#
-    #saves pickle object file
-    def save_obj(obj, name):
-        with open('updatedObj/'+ name + '.pkl', 'wb') as f:
-            pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
-    #loads pickle object file
-    def load_obj(name):
-        with open('updatedObj/' + name + '.pkl', 'rb') as f:
-            return pickle.load(f)
-    #cache = {}
-    #save_obj(cache,'cs_cache')
     cache = load_obj('cs_cache')
     #------------------------------------------------------------------------#
 
 
-
-
-
     def get_event_player_props(api_key, sport, event_id, markets):
-        print('get_event_player_props',event_id)
         base_url = "https://api.the-odds-api.com/v4"
         endpoint = f"/sports/{sport}/events/{event_id}/odds"
         response = ''
@@ -423,7 +368,6 @@ def getProps():
             odds_data = response.json()
             return odds_data
         else:
-            print("Bad response:", response.status_code)
             return {}
     # Your API key for The Odds API
 
@@ -449,42 +393,31 @@ def getProps():
         if events:
             # Process the events as needed
             for event in events:
-                print(event['id'])
                 tg.append(event['id'])
-                print(f"Home Team: {event['home_team']} vs Away Team: {event['away_team']}, Commence Time: {event['commence_time']}")
         else:
-            print("No events found for the specified day.")
+            pass
     else:
-        print(f"Failed to fetch events. Status code: {response.status_code}, Message: {response.text}")
-
-
-    print(tg)
+        pass
 
 
     events = {}
     for event_id in tg:
         odds_data = get_event_player_props(API_KEY, 'basketball_nba', event_id, markets)
         events[event_id]=odds_data
-        
+
 
     event_props = {}
     for e in events:
-        print('---------------------------------')
-        print('EVENT ID ',e)
         event_id = e
 
-        #print(json.dumps(events[e]['bookmakers'][0],indent=4))
         p_ast = {}
         p_pts = {}
         p_reb = {}
-        print('eeeeeeeeeeee',events[e])
         try:
             player_assists =  events[e]['bookmakers'][0]['markets'][0]['outcomes']
             player_points =  events[e]['bookmakers'][0]['markets'][1]['outcomes']
             player_rebounds =  events[e]['bookmakers'][0]['markets'][2]['outcomes']
 
-
-            #print(events[e])
 
             for a in player_assists:
                 p_ast[a['description']] = a['point']
@@ -493,33 +426,26 @@ def getProps():
                 p_pts[a['description']] = a['point']
             for a in player_rebounds:
                 p_reb[a['description']] = a['point']
-            #print('assists',p_ast)
-            #print('pts',p_pts)
-            #print('reb',p_reb)
             event_props[event_id]={'ast':p_ast,'reb':p_reb,'pts':p_pts}
         except IndexError:
-            print('indext erorr-------')
-
+            pass
 
 
     players = {}
     for event in event_props:
         for x in event_props[event]['ast']:
-            print(event_props[event]['ast'][x],x)
             try:
                 players[x]['ast']= event_props[event]['ast'][x]
             except KeyError:
                 players[x]={}
                 players[x]['ast']= event_props[event]['ast'][x]
         for x in event_props[event]['pts']:
-            print(event_props[event]['pts'][x],x)
             try:
                 players[x]['pts']= event_props[event]['pts'][x]
             except KeyError:
                 players[x]={}
                 players[x]['pts']= event_props[event]['pts'][x]
         for x in event_props[event]['reb']:
-            print(event_props[event]['reb'][x],x)
             try:
                 players[x]['reb']= event_props[event]['reb'][x]
             except KeyError:
@@ -527,15 +453,14 @@ def getProps():
                 players[x]['reb']= event_props[event]['reb'][x]
 
 
-            #player[]
     return players
 
 
 def dash(request, dateSelected=None):
     if not request.user.is_authenticated:
-       return redirect('login') 
+       return redirect('login')
     context = {}
-    
+
     if dateSelected is None:
         eastern = timezone('America/Los_Angeles')
         fmt = '%Y-%m-%d'
@@ -556,7 +481,7 @@ def dash(request, dateSelected=None):
     # All games and won games with margin filter
     all_games = Game.objects.filter(simpleRecord=True,finished=True).annotate(margin_as_float=Cast('margin', FloatField())).filter(margin_filter)
     all_games_won = Game.objects.filter(simpleRecord=True, ev_won=1,finished=True).annotate(margin_as_float=Cast('margin', FloatField())).filter(margin_filter)
-    
+
     all_games0 = Game.objects.filter(simpleRecord=True,finished=True).annotate(margin_as_float=Cast('margin', FloatField()))
     all_games_won0 = Game.objects.filter(simpleRecord=True, ev_won=1,finished=True).annotate(margin_as_float=Cast('margin', FloatField()))
 
@@ -629,7 +554,6 @@ def dash(request, dateSelected=None):
     context['id'] = playerId
     context['labels'] = labels
     #requesting api for updated player info
-    #save_obj({}, 'dash-cache')
     dc = load_obj('dash-cache')
     try:
         r = dc[str(playerId)]
@@ -658,18 +582,16 @@ def dash(request, dateSelected=None):
         context['name'] = obj[str(playerId)]
     except KeyError:
         context['name'] = obj[int(playerId)]
-        print('e')
     #set season average
     context['seasonAverage'] = seasonAverages[playerId]
     context['team'] = 0
     #get team
     for team in playerIdByTeamID:
-        for id in playerIdByTeamID[team]:
+        for pid in playerIdByTeamID[team]:
 
-            if str(playerId) == str(id):
+            if str(playerId) == str(pid):
                 context['team'] = team
                 context['team_name'] = teamNamesbyID[int(team)]
-    #current_date = datetime.now().strftime('%Y-%m-%d')
     current_date = datetime.now().strftime('%Y-%m-%d')
 
     lgcache = load_obj('lg-cache')
@@ -677,11 +599,10 @@ def dash(request, dateSelected=None):
     lg =  getLast10Games(context['team'],current_date)
 
 
-    print(lg)
     lg1id = lg[0]
     lg2id = lg[1]
     lg10 = []
-    for id in lg:
+    for game_id in lg:
         try:
             r = lgcache[id]
         except KeyError:
@@ -690,25 +611,22 @@ def dash(request, dateSelected=None):
             lgcache[id] = r
 
         lg10.append(playerlg(r, playerId,context['team']))
-    
+
     lg1 = None
     lg2 = None
     try:
         lg1 = lgcache[lg1id]
     except KeyError:
         lg1 = 'https://www.balldontlie.io/api/v1/stats?game_ids[]='+str(lg1id)+'&per_page=100'
-        print(lg1)
         lg1 = req(lg1)
         lgcache[lg1id] = lg1
     try:
         lg2 = lgcache[lg2id]
     except KeyError:
         lg2 = 'https://www.balldontlie.io/api/v1/stats?game_ids[]='+str(lg2id)+'&per_page=100'
-        print(lg2)
         lg2 = req(lg2)
         lgcache[lg2id] = lg2
 
-    print('lg ids:',lg1id,lg2id)    
     save_obj(lgcache, 'lg-cache')
     lg1 = playerlg(lg1, playerId,context['team'])
     lg2 = playerlg(lg2, playerId,context['team'])
@@ -728,11 +646,6 @@ def dash(request, dateSelected=None):
     context['lg2_opponent_abv']=lg2['opponent_abv']
     context['lg2']=lg2
     context['lg10']=lg10
-
-
-
-
-    #context['active']=True
 
 
     return render(request, 'predict/dash.html', context)
@@ -757,7 +670,7 @@ def evRecord(request):
 
     url = 'https://odds-api1.p.rapidapi.com/portfolio/last-trades-balanced'
     headers = {
-        "X-RapidAPI-Key": "d5015b2f83mshf83f5a65af02d87p15bce4jsn65761633c9f4",
+        "X-RapidAPI-Key": os.environ.get('RAPIDAPI_KEY', ''),
         "X-RapidAPI-Host": "odds-api1.p.rapidapi.com"
     }
     response = requests.request("GET", url, headers=headers, params={})
@@ -783,29 +696,24 @@ def ev(request):
 
     url = "https://odds-api1.p.rapidapi.com/valuebets"
     querystring = {"bookmakers": "bet365,bet365,bet365,bet365,bet365,bet365,bet365,bet365,bet365,bet365,bet365,bet365,bet365,bet365,bet365,bet365,bet365,bet365,bet365,bet365,bet365,bet365,bet365,bet365,"}
-    
+
     headers = {
-        "X-RapidAPI-Key": "d5015b2f83mshf83f5a65af02d87p15bce4jsn65761633c9f4",
+        "X-RapidAPI-Key": os.environ.get('RAPIDAPI_KEY', ''),
         "X-RapidAPI-Host": "odds-api1.p.rapidapi.com"
     }
 
     response = requests.request("GET", url, headers=headers, params=querystring)
     ev_data = response.json()
 
-    # Convert to list of tuples or dictionaries
-    ev_list = [(key, value) for key, value in ev_data.items()]
     processed_ev_data = []
     for key, value in ev_data.items():
-            teams = value['match'].split(' vs ')
-            value['team1'] = teams[0] if len(teams) > 0 else ''
-            value['team2'] = teams[1] if len(teams) > 1 else ''
-            processed_ev_data.append((key, value))
+        teams = value['match'].split(' vs ')
+        value['team1'] = teams[0] if len(teams) > 0 else ''
+        value['team2'] = teams[1] if len(teams) > 1 else ''
+        processed_ev_data.append((key, value))
 
-    # Sort by date
     sorted_ev_list = sorted(processed_ev_data, key=lambda x: x[1]['date'])
-
-    save_obj(sorted_ev_list,'ev')
-    #ev = load_obj('ev')
+    save_obj(sorted_ev_list, 'ev')
     context['ev'] = sorted_ev_list[:30]
 
     bookmakers_list = [
@@ -837,11 +745,8 @@ def ev(request):
 
     # Convert dictionary to list
     ev_record_list = list(ev_record_dict.values())
-    profit = round((ev_record_list[0]['assets_balanced']/1000)*100)
 
     count = 0
-    startingtotal = 1000
-    batch = []
     fullprofit = 0
     percent1000 = 0
     percent500 = 0
@@ -850,16 +755,13 @@ def ev(request):
 
     count5 =0
     record = []
-    print('starting loop now---')
     for x in ev_record_list:
         count+=1
         count5+=1
         if count5 == 150:
-            print('appending assets here')
-            print(x['assets_balanced'])
             record.append(x['assets_balanced'])
             count5=0
-            
+
 
         if count == 1:
             startingtotal = x['assets_balanced']
@@ -876,15 +778,13 @@ def ev(request):
         if count == 1000:
             increase_percentage = ((x['assets_balanced'] - 1000) / 1000) * 100
             percent1000 = increase_percentage
-        
+
     context['fullprofit'] = fullprofit
-    context['percent1000'] = round(1221)
-    context['percent500'] = round(987)
-    context['percent250'] = round(480)
-    context['percent100'] = round(659)
+    context['percent1000'] = round(percent1000)
+    context['percent500'] = round(percent500)
+    context['percent250'] = round(percent250)
+    context['percent100'] = round(percent100)
     context['record'] = record[::-1]
-    print(percent1000,percent500,percent250,percent100,fullprofit)
-    print('last print here======',ev_record_list[0])
     return render(request, 'predict/ev.html', context)
 
 
@@ -904,7 +804,7 @@ async def fetch_historical_odds(session, event_id, sport_key, timestamp, api_key
 
 # Django view to handle the request
 async def arb_history(request):
-    api_key = '75564b9a6ea7c8166c093e873b03186f'
+    api_key = os.environ.get('ODDS_API_KEY', '')
     event_id = request.GET.get('event_id')
     sport_key = request.GET.get('sport_key')
 
@@ -962,26 +862,22 @@ def process_data_for_chartjs(data):
     }
 
 
-
 def update_arb(request):
     event_id = request.GET.get('event_id')
     bookmakers = request.GET.getlist('bookmakers[]')
-    print(event_id,bookmakers)
     # Your logic to make an API request and fetch updated odds
     updated_odds = get_updated_odds(event_id, bookmakers,key=settings.ARBKEY)
-    print('updated odds here',updated_odds)
     return JsonResponse(updated_odds)
-
 
 
 def arb(request):
     if not request.user.is_authenticated:
-       return redirect('login') 
+       return redirect('login')
     context  = {}
     total_bankroll = 100  # Set this to your desired total betting amount
 
     opportunities_list = load_obj('temp-context')
-    
+
     o = []
     for arb in opportunities_list:
         d = {
@@ -1097,28 +993,12 @@ def arbRefresh(request,region):
     return redirect('arb')
 
 
-import retrain
-import stripe
-from bb import settings
-from datetime import datetime, timedelta
-
-
-## renders confirm clear template for account reset.
-
-
-from django.http import JsonResponse
-import os
-import re
-
-
 def retrainLogs(request, model):
-    print('getting retrain logs for: ', model)
     lines_with_dates = []
 
     # Gathering data for TensorflowModel
     train = TensorflowModel.objects.filter(author=request.user, model_number=model)
     for t in train:
-        print(t)
         lines_with_dates.append({
             "type": "train",
             "date_posted": t.date_posted,
@@ -1128,7 +1008,6 @@ def retrainLogs(request, model):
     # Gathering data for Retrain
     rtrain = Retrain.objects.filter(author=request.user, model=model)
     for t in rtrain:
-        print(t)
         lines_with_dates.append({
             "type": "retrain",
             "date_posted": t.date_posted,
@@ -1139,7 +1018,6 @@ def retrainLogs(request, model):
     # Gathering data for ModelReset
     resets = ModelReset.objects.filter(author=request.user, model=model)
     for t in resets:
-        print(t)
         lines_with_dates.append({
             "type": "reset",
             "date_posted": t.date_posted,
@@ -1201,13 +1079,12 @@ def activeSub(request,context):
         stripe.api_key = settings.STRIPE_SECRET_KEY
         subscription = stripe.Subscription.retrieve(stripe_customer.stripeSubscriptionId)
         product = stripe.Product.retrieve(subscription.plan.product)
-        
+
         context['start'] = datetime.fromtimestamp(subscription.current_period_start)
-        
+
         context['end'] = datetime.fromtimestamp(subscription.current_period_end)
 
-        #start = stripe.Subscription.retrieve(stripe_customer.stripeSubscriptionId)
-        
+
 
         # Feel free to fetch any additional data from 'subscription' or 'product'
         # https://stripe.com/docs/api/subscriptions/object
@@ -1223,7 +1100,7 @@ def activeSub(request,context):
     return context
 def usage(request):
     context = {}
-   
+
     # Using Python's datetime to get the current time and subtract 24 hours
     twenty_four_hours_ago = datetime.now() - timedelta(hours=24)
     context['training_count'] = TensorflowModel.objects.filter(author=request.user, date_posted__gte=twenty_four_hours_ago).count()
@@ -1236,21 +1113,17 @@ def usage(request):
         context['training_pct'] = int((context['training_count']/10)*100)
 
 
-
     if context['active']:
         context['prediction_pct'] = int((context['prediction_count']/150)*100)
     else:
         context['prediction_pct'] = int((context['prediction_count']/50)*100)
 
-    
-    print('------------',context['prediction_pct'])
-    return render(request, 'predict/usage.html', context)
 
+    return render(request, 'predict/usage.html', context)
 
 
 #retain model on game
 def retrainModel(request,pk):
-    print('retraining model on game id: ', pk)
     g = Game.objects.filter(pk=pk).first()
 
     Retrain.objects.create(game=g,author=request.user,model=g.model)
@@ -1260,7 +1133,6 @@ def retrainModel(request,pk):
     strength = request.GET.get('strength', '100')  # Default to 100% if not provided
     # Convert strength to a decimal
     strength_decimal = float(strength) / 100.0
-    print('strength_decimal ------------', strength_decimal)
 
     r = retrain.retrain_model(g.model,path,request.user.username,g.home_score,g.visitor_score,strength_decimal)
 
@@ -1269,26 +1141,23 @@ def retrainModel(request,pk):
 
 #clear user's profile stats in order to reset account...
 def clearStats(request):
-    #dont clear stats for demo user
     if request.user == 'demo':
         return redirect('home-predict')
-    #load profile object
     obj = Profile.objects.filter(user=request.user)
-    #reset profile stats
-    obj.update(correct=0)
-    obj.update(predictions=0)
-    obj.update(loss=0)
-    obj.update(gain=0)
-    obj.update(ev_won=0)
-
-    obj.update(ev_margin1=0)
-    obj.update(ev_margin2=0)
-    obj.update(ev_margin3=0)
-    obj.update(ev_won_count=0)
-    obj.update(ev_margin1_count=0)
-    obj.update(ev_margin2_count=0)
-    obj.update(ev_margin3_count=0)
-
+    obj.update(
+        correct=0,
+        predictions=0,
+        loss=0,
+        gain=0,
+        ev_won=0,
+        ev_margin1=0,
+        ev_margin2=0,
+        ev_margin3=0,
+        ev_won_count=0,
+        ev_margin1_count=0,
+        ev_margin2_count=0,
+        ev_margin3_count=0,
+    )
     return redirect('home-predict')
 
 #Delete all games
@@ -1332,9 +1201,7 @@ def betsList(request,team=None, days=30):
     g = Game.objects.filter(author=request.user)
     g = g.filter(bet=True)
     g = g.filter(finished=True)
-    print(team)
     if team != 'all' and team is not None:
-        print('filtering for team',team)
         context['filter'] = team
         g = g.filter(Q(home=team) | Q(visitor=team))
     else:
@@ -1342,7 +1209,7 @@ def betsList(request,team=None, days=30):
     g = g.order_by('-gameid')
     count = 0
     total= 0
-    
+
     history = []
     last = 0
 
@@ -1351,9 +1218,7 @@ def betsList(request,team=None, days=30):
 
     for day in range(days,0,-1):
         history.append(historyTotal)
-        print(day)
         foo = datetime.now() - timedelta(days=day)
-        print(foo)
         for game in g:
             d = datetime.strptime(game.gamedate, '%Y-%m-%d')
             if foo.strftime('%Y-%m-%d') == d.strftime('%Y-%m-%d'):
@@ -1371,7 +1236,7 @@ def betsList(request,team=None, days=30):
         if int(d) >= days:
             cut = c
             break
-        
+
         if game.ev_won == '1':
             count+=1
             total+=90.1
@@ -1380,7 +1245,6 @@ def betsList(request,team=None, days=30):
 
     if c>1:
         g = g[0:c-1]
-    print(len(g),c)
     h = json.dumps(history)
     context['history'] = h
     context['numBets'] = len(g)
@@ -1400,7 +1264,6 @@ def betsList(request,team=None, days=30):
     context['abv'] = ABV
     context['days'] = days
     return render(request,'predict/bets.html',context)
-
 
 
 #Sets game bet true/false
@@ -1424,12 +1287,13 @@ def teamListView(request):
     teamId = 0
     teams = []
     #iterate over teams prepare data.....
-    for id in teamNamesbyID:
+    for team_id in teamNamesbyID:
         team = {}
-        team['id'] = id
-        team['name'] = teamNamesbyID[int(id)]
-        team['abv'] = teamAbvById[int(id)]
-        stats = getTeamData(team['abv'],team['abv'])
+        team['id'] = team_id
+        team['name'] = teamNamesbyID[int(team_id)]
+        abv = teamAbvById[int(team_id)]
+        team['abv'] = abv
+        stats = getTeamData(abv, abv)
         stats = stats[0]
         win = stats[1]
         loss = stats[2]
@@ -1456,9 +1320,9 @@ def teamView(request,abv):
     teamAbvById = load_obj('teamAbvById')
     teamId = 0
     #get team id
-    for id in teamAbvById:
-        if teamAbvById[id] == abv:
-            teamId=id
+    for tid in teamAbvById:
+        if teamAbvById[tid] == abv:
+            teamId=tid
     context['teamId'] = teamId#set team id
     teamName = teamNamesbyID[int(teamId)]#team full name
     players = playerIdByTeamID[str(teamId)]#team roster of players
@@ -1498,8 +1362,6 @@ def teamView(request,abv):
     context['labels'] = labels
 
 
-
-
     #get team data and set context data
     stats = getTeamData(abv,abv)
     stats = stats[0]
@@ -1515,11 +1377,9 @@ def teamView(request,abv):
     return render(request,'predict/team.html',context)
 
 
-
 # Takes player id as input, request current team from api, then compares with saved roster
 # if savedId != updatedId the player will be removed from old team and added to new.
 def updatePlayerTeam(request,playerId,**kwargs):
-    print('updating team')
     #request api for new team id
     url = 'https://www.balldontlie.io/api/v1/players/' + str(playerId)
     r = req(url)
@@ -1530,26 +1390,20 @@ def updatePlayerTeam(request,playerId,**kwargs):
     found=False
     for team in playerIdByTeamID:#get team
         count=0
-        for id in playerIdByTeamID[team]:
-            if str(playerId) == str(id) or playerId == id :#get player in team
+        for pid in playerIdByTeamID[team]:
+            if str(playerId) == str(pid) or playerId == pid :#get player in team
                 savedId = team#saved team id
                 if int(savedId) != int(updatedId):#is saved id different then updated id
-                    print('remove index:',count)
                     playerIdByTeamID[team].pop(count)#remove from old team
                     playerIdByTeamID[updatedId].append(playerId)# add to new team
                 found=True
             count+=1
     if not found:
-        print('updated id ##$$## ',updatedId)
         playerIdByTeamID[updatedId].append(int(playerId))# add to new team
-        print('added new player-------------')
-        print('called for new stats-----------')
         updatePlayerStats(request,int(playerId),newPlayer=True,**kwargs)
         save_obj(playerIdByTeamID,'2022PlayerIdByTeamID')#save obj
         return "added player"
     save_obj(playerIdByTeamID,'2022PlayerIdByTeamID')#save obj
-    print('saved team id:',savedId)
-    print('updated team id:',updatedId)
     #redirect back to player
     return redirect('player-detail',playerId)
 
@@ -1559,7 +1413,6 @@ def updatePlayerTeam(request,playerId,**kwargs):
 # takes player api id, Request new season averages
 # then loads season averages object and updates the player stats
 def updatePlayerStats(request,playerId,newPlayer=False,**kwargs):
-    print('updating stats')
     seasonAverages = load_obj('2022SeasonAverages')#load saved stats
     #request api for new stats
     url='https://api.balldontlie.io/api/v1/season_averages?season=2024&player_id='+str(playerId)
@@ -1574,20 +1427,12 @@ def updatePlayerStats(request,playerId,newPlayer=False,**kwargs):
                 return redirect('player-detail',playerId)
 
     seasonAverages[playerId] = res#update player stats with new obj
-    print(seasonAverages[playerId])
     save_obj(seasonAverages,'2022SeasonAverages')#save obj
     #redirect back to player
     if not newPlayer:
         return redirect('player-detail',playerId)
     else:
-        print('finished updating stats for new player....')
         return 'finished updating stats for new player....'
-
-
-
-
-
-
 
 
 # Used by player search result to convert results of a player name to player id
@@ -1595,14 +1440,13 @@ def updatePlayerStats(request,playerId,newPlayer=False,**kwargs):
 def playerDetailbyName(request,key):
     obj = load_obj('2019PlayerNamesByID')#load saved player names by id
     player_id =''
-    for id in obj:#look for player id
-        if obj[id].replace("'", "-") == key:#convert ' apostrophe with - dash
-            print(id)
-            player_id = id#found player id
+    for pid in obj:#look for player id
+        if obj[pid].replace("'", "-") == key:#convert ' apostrophe with - dash
+            player_id = pid#found player id
             break
     #redirect player detail page of player id
     return redirect('player-detail', player_id)
-    
+
 
 # Player detail view shows ESPN image, current stats, and status.
 # takes player API ID
@@ -1634,27 +1478,25 @@ def playerDetail(request,playerId):
         context['name'] = obj[str(playerId)]
     except KeyError:
         context['name'] = obj[int(playerId)]
-        print('e')
     #set season average
     context['seasonAverage'] = seasonAverages[playerId]
     context['team'] = 0
     #get team
     for team in playerIdByTeamID:
-        for id in playerIdByTeamID[team]:
+        for pid in playerIdByTeamID[team]:
 
-            if str(playerId) == str(id):
+            if str(playerId) == str(pid):
                 context['team'] = team
                 context['team_name'] = teamNamesbyID[int(team)]
                 context['abv'] = teamAbvById[int(team)]
 
     current_date = datetime.now().strftime('%Y-%m-%d')
     lgcache = load_obj('lg-cache')
-    lg =  getLast10Games(context['team'],current_date)    
-    print(lg)
+    lg =  getLast10Games(context['team'],current_date)
     lg1id = lg[0]
     lg2id = lg[1]
     lg10 = []
-    for id in lg:
+    for game_id in lg:
         try:
             r = lgcache[id]
         except KeyError:
@@ -1663,25 +1505,22 @@ def playerDetail(request,playerId):
             lgcache[id] = r
 
         lg10.append(playerlg(r, playerId,context['team']))
-    
+
     lg1 = None
     lg2 = None
     try:
         lg1 = lgcache[lg1id]
     except KeyError:
         lg1 = 'https://www.balldontlie.io/api/v1/stats?game_ids[]='+str(lg1id)+'&per_page=100'
-        print(lg1)
         lg1 = req(lg1)
         lgcache[lg1id] = lg1
     try:
         lg2 = lgcache[lg2id]
     except KeyError:
         lg2 = 'https://www.balldontlie.io/api/v1/stats?game_ids[]='+str(lg2id)+'&per_page=100'
-        print(lg2)
         lg2 = req(lg2)
         lgcache[lg2id] = lg2
 
-    print('lg ids:',lg1id,lg2id)    
     save_obj(lgcache, 'lg-cache')
     lg1 = playerlg(lg1, playerId,context['team'])
     lg2 = playerlg(lg2, playerId,context['team'])
@@ -1706,7 +1545,7 @@ def playerDetail(request,playerId):
 
 def playerlg(data, playerid, team):
     date = data['data'][0]['game']['date']
-    
+
     # Attempt to parse the date with both possible formats
     try:
         # First, try parsing with the detailed datetime format
@@ -1714,7 +1553,7 @@ def playerlg(data, playerid, team):
     except ValueError:
         # If that fails, fall back to the simpler date format
         date_time_obj = datetime.strptime(date, '%Y-%m-%d')
-    
+
     # Convert to 'yyyy-mm-dd' format
     date = date_time_obj.strftime('%Y-%m-%d')
 
@@ -1729,7 +1568,7 @@ def playerlg(data, playerid, team):
         history_id = data['data'][0]['game']['visitor_team_id']
         opponent_score = data['data'][0]['game']['home_team_score']
         history_score = data['data'][0]['game']['visitor_team_score']
-    
+
     stats = []
     for player in data['data']:
         try:
@@ -1781,15 +1620,15 @@ def getPlayerInfo(team,playerName):
         'UTA':  'UTA',
         'WAS':  'WAS',
         }
-    
+
     t=convert[team]
     url = "https://tank01-fantasy-stats.p.rapidapi.com/getNBATeams"
 
     querystring = {"schedules":"true","rosters":"true"}
 
 
-    key = 'a0f0cd0b5cmshfef96ed37a9cda6p1f67bajsnfcdd16f37df8'
-    
+    key = os.environ.get('TANK01_API_KEY', '')
+
     headers = {
         "X-RapidAPI-Key": key,
         "X-RapidAPI-Host": "tank01-fantasy-stats.p.rapidapi.com"
@@ -1804,12 +1643,9 @@ def getPlayerInfo(team,playerName):
         now = datetime.now()
         time_diff = now-lastupdate
         seconds = time_diff.total_seconds()
-        print('Seconds since last update',seconds)
     except KeyError:
-        print('no saved team stats found')
         teamStats = {}
     if seconds == 0 or seconds>1800:
-        print('getting updated results')
         #didnt find cache make request
         response = requests.request("GET", url, headers=headers, params=querystring).json()
         lastupdate = datetime.now()
@@ -1817,17 +1653,15 @@ def getPlayerInfo(team,playerName):
         teamStats['lastupdate']=lastupdate
         save_obj(teamStats,'teamStats')
     else:
-        print('loaded cached results')
         response = teamStats['response']
 
     r = response['body']
     data = {}
-    #iterate through api response 
+    #iterate through api response
     for team in range(len(r)):
         if str(r[team]['teamAbv']) == str(t):
             for player in r[team]['Roster']:
                 if(r[team]['Roster'][player]['espnName']==playerName):
-                    print('Found Player---------')
                     data['nbaComHeadshot']=r[team]['Roster'][player]['nbaComHeadshot']
                     data['nbaComLink']=r[team]['Roster'][player]['nbaComLink']
                     data['espnLink']=r[team]['Roster'][player]['espnLink']
@@ -1844,8 +1678,6 @@ def getPlayerInfo(team,playerName):
                     else:
                         data['injury'] = False
 
-    #print(teamStats)
-    #save_obj(teamStats,"teamStats")
     return data
 
 # Search result view takes player name input string
@@ -1871,10 +1703,8 @@ def searchResults(request,playerName):
             p['id']=player
             try:
                 p['seasonAverage']=seasonAverages[int(player)]
-                print(seasonAverages[int(player)])
             except KeyError:
-            
-                print('not found')
+
                 continue
             res.append(p)# add player to results
     context['res'] = res
@@ -1893,7 +1723,6 @@ def playerSearch(request):
 def getAllScores(request):
     qs = Game.objects.filter(author=request.user)
     for instance in qs:
-        print(instance.home_score)
         if int(instance.home_score)==0:
             time.sleep(1.3)#sleep between requests
             getScore(request,instance.pk)
@@ -1902,8 +1731,6 @@ def getAllScores(request):
 # renders faq page
 def faq(request):
     return render(request,'predict/faq.html')
-
-
 
 
 # Reset model slot, takes int model slot and gets user from requests
@@ -1919,349 +1746,167 @@ def resetModel(request,model):
     return redirect('train-view',model)
 
 
-
-
-
 # Model training view input model int
 # saves checkpoints in userModels folder
 # saves model settings in updatedObj folder
 # Renders training view for currently selected model
-@login_required
-def trainView(request,model):
-    context = {}
-    context['model'] = model#set model int context
-    username = request.user
+MODEL_SETTING_KEYS = [
+    'layer1Count', 'layer1Activation', 'layer2Count', 'layer2Activation',
+    'optimizer', 'epochs', 'batchSize', 'kr', 'es', 'rmw',
+    'streaks', 'wl', 'gp', 'ps', 'players',
+    'ast', 'blk', 'reb', 'fg3', 'fg', 'ft', 'pf', 'pts', 'stl', 'turnover',
+]
+
+MODEL_SETTINGS_DEFAULTS = {
+    'es': 'true', 'rmw': 'true', 'kr': 'true',
+    'streaks': 'true', 'wl': 'true', 'gp': 'true', 'ps': 'true', 'players': 7,
+    'ast': 'true', 'blk': 'true', 'reb': 'true', 'fg3': 'true', 'fg': 'true',
+    'ft': 'true', 'pf': 'true', 'pts': 'true', 'stl': 'true', 'turnover': 'true',
+}
+
+
+def _load_model_settings(username, model):
     try:
-        #load model settings
-        modelSettings = load_obj(str(username.username)+'ModelSettings'+model)
-        try:
-            eval = modelSettings['eval']
-            context['eval'] = eval
-        except KeyError:
-            print('no eval')
-        context['showresults'] = True
-        context['results'] = modelSettings['results']
-        context['layer1Count']=modelSettings['layer1Count']
-        context['layer1Activation']=modelSettings['layer1Activation']
-        context['layer2Count']=modelSettings['layer2Count']
-        context['layer2Activation']=modelSettings['layer2Activation']
-        context['optimizer']=modelSettings['optimizer']
-        context['epochs']=modelSettings['epochs']
-        context['batchSize']=modelSettings['batchSize']
-        try:
-            context['es']=modelSettings['es']
-            context['rmw']=modelSettings['rmw']
-            context['kr']=modelSettings['kr']
-            context['streaks']=modelSettings['streaks']
-            context['wl']=modelSettings['wl']
-            context['gp']=modelSettings['gp']
-            context['ps']=modelSettings['ps']
-            context['players']=modelSettings['players']
-
-                        
-            context['ast']=modelSettings['ast']
-            context['blk']=modelSettings['blk']
-            context['reb']=modelSettings['reb']
-            context['fg3']=modelSettings['fg3']
-            context['fg']=modelSettings['fg']
-            context['ft']=modelSettings['ft']
-            context['pf']=modelSettings['pf']
-            context['pts']=modelSettings['pts']
-            context['stl']=modelSettings['stl']
-            context['turnover']=modelSettings['turnover']
-            
-        except KeyError:
-            context['es']='true'
-            context['rmw']='true'
-            context['kr']='true'
-            context['wl']='true'
-            context['streaks']='true'
-
-            context['gp']='true'
-            context['ps']='true'
-            context['players']=7
-            context['ast']='true'
-            context['blk']='true'
-            context['reb']='true'
-            context['fg3']='true'
-            context['fg']='true'
-            context['ft']='true'
-            context['pf']='true'
-            context['pts']='true'
-            context['stl']='true'
-            context['turnover']='true'
-
+        settings = load_obj(str(username) + 'ModelSettings' + model)
     except FileNotFoundError:
-        #load defaults if no saved settings
-        modelSettings = load_obj('DefaultModelSettings')
-        try:
-            eval = modelSettings['eval']
-            context['eval'] = eval
+        settings = load_obj('DefaultModelSettings')
+    context = {}
+    context['showresults'] = True
+    if 'eval' in settings:
+        context['eval'] = settings['eval']
+    if 'results' in settings:
+        context['results'] = settings['results']
+    for key in MODEL_SETTING_KEYS:
+        context[key] = settings.get(key, MODEL_SETTINGS_DEFAULTS.get(key))
+    return context, settings
 
-        except KeyError:
-            print('old model, no saved eval')
-        context['showresults'] = True
-        context['results'] = modelSettings['results']
-        context['layer1Count']=modelSettings['layer1Count']
-        context['layer1Activation']=modelSettings['layer1Activation']
-        context['layer2Count']=modelSettings['layer2Count']
-        context['layer2Activation']=modelSettings['layer2Activation']
-        context['optimizer']=modelSettings['optimizer']
-        context['epochs']=modelSettings['epochs']
-        context['batchSize']=modelSettings['batchSize']
 
-        try:
-            context['es']=modelSettings['es']
-            context['rmw']=modelSettings['rmw']
-            context['kr']=modelSettings['kr']
-
-            context['streaks']=modelSettings['streaks']
-            context['wl']=modelSettings['wl']
-            context['gp']=modelSettings['gp']
-            context['ps']=modelSettings['ps']
-            context['players']=modelSettings['players']
-            
-            context['ast']=modelSettings['ast']
-            context['blk']=modelSettings['blk']
-            context['reb']=modelSettings['reb']
-            
-            context['fg3']=modelSettings['fg3']
-            context['fg']=modelSettings['fg']
-            context['ft']=modelSettings['ft']
-            context['pf']=modelSettings['pf']
-            context['pts']=modelSettings['pts']
-            context['stl']=modelSettings['stl']
-            context['turnover']=modelSettings['turnover']
-            
-        except KeyError:
-            context['es']='true'
-            context['rmw']='true'
-            context['kr']='true'
-            context['streaks']='true'
-            context['wl']='true'
-            context['gp']='true'
-            context['ps']='true'
-            context['players']=7
-            
-            context['ast']='true'
-            context['blk']='true'
-            context['reb']='true'
-            context['fg3']='true'
-            context['fg']='true'
-            context['ft']='true'
-            context['pf']='true'
-            context['pts']='true'
-            context['stl']='true'
-            context['turnover']='true'
-            
-    #render training page
-    return render(request,'predict/train.html',context)
-
-# makes dataset, no longer supported. might add back again oneday
 @login_required
-def makeDataSet(request,seasons,numgames):
-    print(seasons,numgames)
+def trainView(request, model):
+    context = {'model': model}
+    username = request.user
+    model_context, modelSettings = _load_model_settings(username.username, model)
+    context.update(model_context)
+    return render(request, 'predict/train.html', context)
+
+
+@login_required
+def makeDataSet(request, seasons, numgames):
     seasons = seasons.split('-')
-    print(seasons)
-    webData.CreateDataset(seasons,numgames)
+    webData.CreateDataset(seasons, numgames)
     return redirect('train-view')
 
 
-# trains a model, takes input for all the sliders and settings
-# calls webappTrain from webTrain.py
+def _get_client_ip(request):
+    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    if x_forwarded_for:
+        return x_forwarded_for.split(',')[-1].strip()
+    return request.META.get('REMOTE_ADDR')
+
+
+def _build_model_settings_from_locals(locals_dict):
+    return {key: locals_dict[key] for key in MODEL_SETTING_KEYS if key in locals_dict}
+
+
 @login_required
-def trainModel(request,model,epochs,batchSize,layer1Count,layer1Activation,layer2Count,layer2Activation,optimizer,es,rmw,kr,streaks,wl,gp,ps,players,ast,blk,reb,fg3,fg,ft,pf,pts,stl,turnover,re_eval):
-    context = {}
+def trainModel(request, model, epochs, batchSize, layer1Count, layer1Activation, layer2Count, layer2Activation, optimizer, es, rmw, kr, streaks, wl, gp, ps, players, ast, blk, reb, fg3, fg, ft, pf, pts, stl, turnover, re_eval):
     twenty_four_hours_ago = datetime.now() - timedelta(hours=24)
-    context['train_count_'] = TensorflowModel.objects.filter(author=request.user, date_posted__gte=twenty_four_hours_ago).count()
-    context = activeSub(request,context)
-    if re_eval == 'true':
-        re_eval = True
-    '''
-    if context['active']:
-        if context['train_count_']>=100:
-            return redirect('usage')
+    train_count = TensorflowModel.objects.filter(author=request.user, date_posted__gte=twenty_four_hours_ago).count()
+    context = activeSub(request, {'train_count_': train_count})
 
-    else:
-        if context['train_count_']>=150:#changed this for debug testing
-            return redirect('usage')
-    '''
+    TensorflowModel.objects.create(author=request.user, ip=_get_client_ip(request), model_number=model)
 
-    def get_client_ip(request):
-        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-        if x_forwarded_for:
-            ip = x_forwarded_for.split(',')[-1].strip()
-        else:
-            ip = request.META.get('REMOTE_ADDR')
-        return ip
-    TensorflowModel.objects.create(author=request.user,ip=get_client_ip(request),model_number=model)
- 
-    username = request.user#set username of request
-    context = {}
-    context['model'] = model
-    size = batchSize
-    modelSettings = {}
-    modelSettings['layer1Count']=layer1Count
-    modelSettings['layer1Activation']=layer1Activation
-    modelSettings['layer2Count']=layer2Count
-    modelSettings['layer2Activation']=layer2Activation
-    modelSettings['optimizer']=optimizer
-    modelSettings['epochs']=epochs
-    modelSettings['batchSize']=batchSize
+    model_settings = _build_model_settings_from_locals(locals())
 
-    modelSettings['kr']=kr
-    modelSettings['es']=es
-    modelSettings['rmw']=rmw
+    results = webTrain.webappTrain(model, epochs, batchSize, layer1Count, layer1Activation, layer2Count, layer2Activation, optimizer, request.user, es, rmw, kr, streaks, wl, gp, ps, players, ast, blk, reb, fg3, fg, ft, pf, pts, stl, turnover)
 
-    modelSettings['streaks']=streaks
-    modelSettings['wl']=wl
-    modelSettings['gp']=gp
-    modelSettings['ps']=ps
-    modelSettings['players']=players
+    model_settings['results'] = results[1]
+    model_settings['eval'] = results[0]
+    save_obj(model_settings, str(request.user.username) + 'ModelSettings' + model)
 
-    modelSettings['ast']=ast
-    modelSettings['reb']=reb
-    modelSettings['blk']=blk
-    modelSettings['fg3']=fg3
-    modelSettings['fg']=fg
-    modelSettings['ft']=ft
-    modelSettings['pf']=pf
-    modelSettings['pts']=pts
-    modelSettings['stl']=stl
-    modelSettings['turnover']=turnover
-
-
-    #call web train
-    results = webTrain.webappTrain(model,epochs,size,layer1Count,layer1Activation,layer2Count,layer2Activation,optimizer,username,es,rmw,kr,streaks,wl,gp,ps,players,ast,blk,reb,fg3,fg,ft,pf,pts,stl,turnover)
-    #set results and eval
-    modelSettings['results']=results[1]
-    modelSettings['eval']=results[0]
-    #save model settings
-    save_obj(modelSettings,str(username.username)+'ModelSettings'+model)
-
+    context.update(model_settings)
     context['showresults'] = True
     context['results'] = results[1]
-    context['layer1Count']=layer1Count
-    context['layer1Activation']=layer1Activation
-    context['layer2Count']=layer2Count
-    context['layer2Activation']=layer2Activation
-    context['optimizer']=optimizer
-    context['epochs']=epochs
-    context['batchSize']=batchSize
-    context['es']=es
-    context['rmw']=rmw
-    context['kr']=kr
-    context['streaks']=streaks
-    context['wl']=wl
-    context['gp']=gp
-    context['ps']=ps
-    context['players']=players
-    context['ast']=ast
-    context['blk']=reb
-    context['fg3']=fg3
-    context['fg']=fg
-    context['ft']=ft
-    context['pf']=pf
-    context['pts']=pts
-    context['stl']=stl
-    context['turnover']=turnover
-
-    context = load_obj(str(username.username)+'ModelSettings'+model)
-    eval = modelSettings['eval']
-    context['eval'] = eval
-    context['results'] = modelSettings['results']
     context['model'] = model
-    #render training page
-    return render(request,'predict/train.html',context)
 
-#Renders profile stats like margin 1-3 and win/loss with graphs.
+    saved = load_obj(str(request.user.username) + 'ModelSettings' + model)
+    context['eval'] = saved.get('eval', model_settings.get('eval'))
+    context['results'] = saved.get('results', model_settings.get('results'))
+
+    return render(request, 'predict/train.html', context)
+
 @login_required
 def statsView(request):
+    profile = Profile.objects.filter(user=request.user).values(
+        'correct', 'predictions', 'ev_won', 'ev_won_count',
+        'ev_margin1', 'ev_margin1_count',
+        'ev_margin2', 'ev_margin2_count',
+        'ev_margin3', 'ev_margin3_count',
+        'gain', 'loss',
+    ).first()
+
+    if not profile:
+        profile = {}
+
+    def safe_pct(numerator, denominator):
+        try:
+            return round(numerator / denominator * 100, 1)
+        except ZeroDivisionError:
+            return 1
+
+    num_pred = profile.get('predictions', 0)
+    correct = profile.get('correct', 0)
+
     context = {}
-    #get a bunch of context data
-    user = request.user
-    context['correct'] = Profile.objects.filter(user=user).values('correct')[0]['correct']
-    context['numpred'] =  Profile.objects.filter(user=user).values('predictions')[0]['predictions']
-    if Profile.objects.filter(user=user).values('predictions')[0]['predictions'] >= 1:
-        
-        context['pc'] = round(Profile.objects.filter(user=user).values('correct')[0]['correct']/Profile.objects.filter(user=user).values('predictions')[0]['predictions']*100,1)
-        context['pw'] = (round(Profile.objects.filter(user=user).values('correct')[0]['correct']/Profile.objects.filter(user=user).values('predictions')[0]['predictions']*100,1)-100)*-1
-        try:
-            context['extraCorrect'] = round(Profile.objects.filter(user=user).values('correct')[0]['correct']/Profile.objects.filter(user=user).values('predictions')[0]['predictions']*100,1)-round(Profile.objects.filter(user=user).values('ev_margin1')[0]['ev_margin1'] /Profile.objects.filter(user=user).values('ev_margin1_count')[0]['ev_margin1_count'] *100)
-        except ZeroDivisionError:
-            context['extraCorrect'] = 1
-        context['ev_won'] = Profile.objects.filter(user=user).values('ev_won')[0]['ev_won']
-        context['ev_won_count'] = Profile.objects.filter(user=user).values('ev_won_count')[0]['ev_won_count']
-        try:
-            context['ev_won_pct'] = round(Profile.objects.filter(user=user).values('ev_won')[0]['ev_won'] /Profile.objects.filter(user=user).values('ev_won_count')[0]['ev_won_count'] *100)
-        except ZeroDivisionError:
-            context['ev_won_pct'] = 1
-        context['ev_margin1'] = Profile.objects.filter(user=user).values('ev_margin1')[0]['ev_margin1']
-        context['ev_margin1_count'] = Profile.objects.filter(user=user).values('ev_margin1_count')[0]['ev_margin1_count']
-        try:
-            context['ev_margin1_pct'] = round(Profile.objects.filter(user=user).values('ev_margin1')[0]['ev_margin1'] /Profile.objects.filter(user=user).values('ev_margin1_count')[0]['ev_margin1_count'] *100)
-        except ZeroDivisionError:
-            context['ev_margin1_pct'] = 1
 
-        context['ev_margin2'] = Profile.objects.filter(user=user).values('ev_margin2')[0]['ev_margin2']
-        context['ev_margin2_count'] = Profile.objects.filter(user=user).values('ev_margin2_count')[0]['ev_margin2_count']
-        try:
-            context['ev_margin2_pct'] = round(Profile.objects.filter(user=user).values('ev_margin2')[0]['ev_margin2'] /Profile.objects.filter(user=user).values('ev_margin2_count')[0]['ev_margin2_count'] *100)
-        except ZeroDivisionError:
-            context['ev_margin2_pct'] = 1
-        context['ev_margin3'] = Profile.objects.filter(user=user).values('ev_margin3')[0]['ev_margin3']
-        context['ev_margin3_count'] = Profile.objects.filter(user=user).values('ev_margin3_count')[0]['ev_margin3_count']
-        try:
-            context['ev_margin3_pct'] = round(Profile.objects.filter(user=user).values('ev_margin3')[0]['ev_margin3'] /Profile.objects.filter(user=user).values('ev_margin3_count')[0]['ev_margin3_count'] *100)
-        except ZeroDivisionError:
-            context['ev_margin3_pct'] = 1
-        context['gain'] =  Profile.objects.filter(user=user).values('gain')[0]['gain']
-        context['loss'] =  Profile.objects.filter(user=user).values('loss')[0]['loss']
-        context['lg'] = Profile.objects.filter(user=user).values('gain')[0]['gain'] - Profile.objects.filter(user=user).values('loss')[0]['loss']
-        
+    if num_pred >= 1:
+        context.update({
+            'correct': correct,
+            'numpred': num_pred,
+            'pc': safe_pct(correct, num_pred),
+            'pw': (safe_pct(correct, num_pred) - 100) * -1,
+            'extraCorrect': safe_pct(correct, num_pred) - safe_pct(profile.get('ev_margin1', 0), profile.get('ev_margin1_count', 0)),
+            'ev_won': profile.get('ev_won', 0),
+            'ev_won_count': profile.get('ev_won_count', 0),
+            'ev_won_pct': safe_pct(profile.get('ev_won', 0), profile.get('ev_won_count', 1)),
+            'ev_margin1': profile.get('ev_margin1', 0),
+            'ev_margin1_count': profile.get('ev_margin1_count', 0),
+            'ev_margin1_pct': safe_pct(profile.get('ev_margin1', 0), profile.get('ev_margin1_count', 1)),
+            'ev_margin2': profile.get('ev_margin2', 0),
+            'ev_margin2_count': profile.get('ev_margin2_count', 0),
+            'ev_margin2_pct': safe_pct(profile.get('ev_margin2', 0), profile.get('ev_margin2_count', 1)),
+            'ev_margin3': profile.get('ev_margin3', 0),
+            'ev_margin3_count': profile.get('ev_margin3_count', 0),
+            'ev_margin3_pct': safe_pct(profile.get('ev_margin3', 0), profile.get('ev_margin3_count', 1)),
+            'gain': profile.get('gain', 0),
+            'loss': profile.get('loss', 0),
+            'lg': profile.get('gain', 0) - profile.get('loss', 0),
+        })
     else:
-        context['ev_won'] = 1
-        context['ev_won_count'] = 1
+        context.update({
+            'correct': 1, 'numpred': 1, 'pc': '0',
+            'ev_won': 1, 'ev_won_count': 1,
+            'ev_margin1': 1, 'ev_margin1_count': 1, 'ev_margin1_pct': 1,
+            'ev_margin2': 1, 'ev_margin2_count': 1, 'ev_margin2_pct': 1,
+            'ev_margin3': 1, 'ev_margin3_count': 1, 'ev_margin3_pct': 1,
+            'gain': 1, 'loss': 1, 'lg': 1,
+        })
 
-        context['ev_margin1'] = 1
-        context['ev_margin1_count'] = 1
-        context['ev_margin1_pct'] = 1
-        context['ev_margin2'] = 1
-        context['ev_margin2_count'] =1
-        context['ev_margin2_pct'] = 1
-        context['ev_margin3'] = 1
-        context['ev_margin3_count'] = 1
-        context['ev_margin3_pct'] = 1
-        context['correct'] = 1
-        context['numpred'] =  1
-        context['gain'] = 1
-        context['loss'] =  1
-        context['lg'] = 1
-        context['pc'] = '0'
-   
-    qs = Message.objects.order_by('id')[:100]
-    profiles = Profile.objects.order_by('id')
-    context['profiles'] = profiles
-    context['qs']=qs
-    #render page
-    #this page is also rendering chat and users list
-    #probably can be removed from github version, only really needed live
-    #for now i will leave it
-    return render(request,'predict/stats.html',context)
+    context['qs'] = Message.objects.order_by('id')[:100]
+    context['profiles'] = Profile.objects.order_by('id')
+
+    return render(request, 'predict/stats.html', context)
 
 # Remove player from game
 # takes game pk id and player id
 # adds player id to blacklisted players and recreates game without player..
 # redirects back to game edit view
 def removePlayer(request,pk,player):
-    print(pk)#game pk
-    print(player)#player name
     obj = load_obj('2019PlayerNamesByID')
     player_id =''
-    for id in obj:
-        if obj[id].replace("'", "-") == player:#convert ' apostrophe with - dash
-            print(id)
-            player_id = id#found player id
+    for pid in obj:
+        if obj[pid].replace("'", "-") == player:#convert ' apostrophe with - dash
+            player_id = pid#found player id
             break
     #get game object instance
     g = Game.objects.filter(pk=pk)
@@ -2284,34 +1929,22 @@ def removePlayer(request,pk,player):
         removed_players.append(str(player_id))
     removed_players_dump = json.dumps(removed_players)
     season = '2022'
-    labels = ['ast','blk','dreb','fg3_pct','fg3a','fg3m','fga','fgm','fta','ftm','oreb','pf','pts','reb','stl', 'turnover', 'min']
-    #path to csv file for prediction
-    path = 'csv/'+str(request.user)+str(csvid)+'.csv'
-    #get current spread
-    spread = getSpread(home,visitor,date)
-    #set spread values
+    path = 'csv/' + str(request.user) + str(csvid) + '.csv'
+    spread = getSpread(home, visitor, date)
     home_spread = spread[0]
     visitor_spread = spread[1]
-    #get team data
-    stats = getTeamData(home,visitor)
-    #set team data
+    stats = getTeamData(home, visitor)
     homeTeamStats = stats[0]
     homeTeamInjuryComplex = homeTeamStats.pop(-1)
-
     homeTeamInjury = homeTeamStats.pop(-1)
-    
     visitorTeamStats = stats[1]
     visitorTeamInjuryComplex = visitorTeamStats.pop(-1)
     visitorTeamInjury = visitorTeamStats.pop(-1)
-    
     home_streak = homeTeamStats.pop(-1)
     visitor_streak = visitorTeamStats.pop(-1)
-
-    #print('spread: ', spread)
     homeTeamInjuryComplex = json.dumps(homeTeamInjuryComplex)
     visitorTeamInjuryComplex = json.dumps(visitorTeamInjuryComplex)
-    #get future game
-    found, gameid, playerids,asd,dsa,das,foobar = futureGame(home_spread,homeTeamStats,visitorTeamStats,date,home,visitor,path,season,labels,removed_players)
+    found, gameid, playerids, *_ = futureGame(home_spread, homeTeamStats, visitorTeamStats, date, home, visitor, path, season, labels, removed_players)
 
     #set simple injury data
     homeInjury = ''
@@ -2337,10 +1970,7 @@ def removePlayer(request,pk,player):
     return redirect('edit-predict',pk)
 
 
-
-
-
-# creates csv file with all games on account. 
+# creates csv file with all games on account.
 # exports them and supplies an instant download.
 def exportGames(request):
     # Create the HttpResponse object with the appropriate CSV header.
@@ -2348,7 +1978,7 @@ def exportGames(request):
     # http header
     response['Content-Disposition'] = 'attachment; filename="export.csv"'
     # csv header
-    header = ['gameid','gamedate','home','visitor','margin','spread_prediction','won_vs_spread','home_score','visitor_score','home_score_prediction','visitor_score_prediction','home_spread','visitor_spread','home_games_won','home_games_loss','visitor_games_won','visitor_games_loss','pmscore','home_injury','visitor_injury','removed_players']    
+    header = ['gameid','gamedate','home','visitor','margin','spread_prediction','won_vs_spread','home_score','visitor_score','home_score_prediction','visitor_score_prediction','home_spread','visitor_spread','home_games_won','home_games_loss','visitor_games_won','visitor_games_loss','pmscore','home_injury','visitor_injury','removed_players']
     #create writer
     writer = csv.writer(response)
     #write header
@@ -2371,143 +2001,106 @@ def exportGames(request):
     #write lines
     for line in lines:
         writer.writerow(line)
-    #return the file
     return response
 
 
 # Saved edited game stats, and makes prediction
 # takes model slot to user, pk id of game, and str of any changes made to stats
 # returns redirect to dashboard, maybe change this to redirect back to edit view not sure.
-def saveEdit(request,model,pk,change,**kwargs):
+CSV_PREAMBLE_FIELDS = 14  # gameid, spread, home_team_id, streak, gp, w, l, visitor_team_id, streak, gp, w, l, plus 2 for home/visitor entries
 
-    model = str(model)#set model int number
-    username = request.user#set user name
-    #convert changes input str to changes list
+
+def _pop_csv_preamble(data, header):
+    """Pop the preamble fields from CSV data, returning extracted IDs."""
+    gameid = data.pop(0); header.pop(0)  # gameid
+    data.pop(0); header.pop(0)  # spread
+    homeid = data.pop(0); header.pop(0)  # home_team_id
+    for _ in range(3):
+        data.pop(0); header.pop(0)  # home streak, gp, w
+    data.pop(0); header.pop(0)  # hl
+    visitorid = data.pop(0); header.pop(0)  # visitor_team_id
+    for _ in range(4):
+        data.pop(0); header.pop(0)  # visitor streak, gp, w, l
+    return gameid, homeid, visitorid
+
+
+def _compute_spread_prediction(spread, pmscore):
+    if spread > pmscore:
+        return 0
+    return 1
+
+
+def saveEdit(request, model, pk, change, **kwargs):
+    model = str(model)
+    user = request.user
     changes = change[7:].split('-')
     changes.pop(-1)
-    print(changes)
-    context = {}
-    user = request.user
-    #get game object
+
     g = Game.objects.filter(pk=pk)
-    #get csvid
     csvid = g.values('csvid')[0]['csvid']
-    #set path
-    path = 'csv/'+str(user.username)+str(csvid)+'.csv'
-    csv = open(path,'r')
-    first=True
-    data = ''
-    header = ''
+    path = 'csv/' + str(user.username) + str(csvid) + '.csv'
 
-    for line in csv.readlines():
-        print(line)
-        if first:
-            header = line
-            first = False
-        else:
-            data = line#get old data before changes
-            break
-    #split old data and head into lists
+    with open(path, 'r') as csv_file:
+        lines = csv_file.readlines()
+        header = lines[0].strip()
+        data = lines[1].strip() if len(lines) > 1 else ''
+
     data = data.split(',')
-    header= header.split(',')
-    print(path,data,'-------')
-    #pop game id, home and visitor team stats and spread
-    #doing this to leave only player data
-    #the player data is then mapped against any changes to the input data
-    gameid = data.pop(0)
-    header.pop(0)
-    
-    data.pop(0)
-    header.pop(0)
+    header = header.split(',')
 
-    homeid = data.pop(0)
-    header.pop(0)
-    data.pop(0)
-    header.pop(0)
-    data.pop(0)
-    header.pop(0)
-    data.pop(0)
-    header.pop(0)
+    gameid, homeid, visitorid = _pop_csv_preamble(data, header)
 
-    visitorid = data.pop(0)
-    header.pop(0)
-    data.pop(0)
-    header.pop(0)
-    data.pop(0)
-    header.pop(0)
-    data.pop(0)
-    header.pop(0)
-
-    labels = ['ast','blk','dreb','fg3_pct','fg3a','fg3m','fga','fgm','fta','ftm','oreb','pf','pts','reb','stl', 'turnover', 'min']
-    print(header)
-    print(data)
-    #loop through changes
     for c in changes:
-        x = c.split(':')#specific change being made
-        n=17*int(x[0])-17+int(x[1])#where in data needs to be changed
-        data[n-2]=x[2]#update new data
-        print(n)
-        print(data[n-2])
-    print(data,'fffffffffffff')
+        x = c.split(':')
+        idx = 17 * int(x[0]) - 17 + int(x[1])
+        data[idx - 2] = x[2]
 
-    #write csv header
     writeCSVHeader(labels, path)
-    #write csv file with changes to data applied
-    def w(data, path, g):
-        hgp = int(g.values('home_games_won')[0]['home_games_won'])+int(g.values('home_games_loss')[0]['home_games_loss'])
-        spread = str(g.values('home_spread')[0]['home_spread'])
-        vgp = int(g.values('visitor_games_won')[0]['visitor_games_won'])+int(g.values('visitor_games_loss')[0]['visitor_games_loss'])
-        home_streak = int(g.values('home_streak')[0]['home_streak'])
-        visitor_streak = int(g.values('visitor_streak')[0]['visitor_streak'])
-        ss = str(g.values('gameid')[0]['gameid'])+','+spread+','+homeid+','+str(home_streak)+','+str(hgp)
-        ss+=','+str(int(g.values('home_games_won')[0]['home_games_won']))+','+str(int(g.values('home_games_loss')[0]['home_games_loss']))
-        ss+=','+visitorid+','+str(visitor_streak)+','+str(vgp)
-        ss+=','+str(int(g.values('visitor_games_won')[0]['visitor_games_won']))+','+str(int(g.values('visitor_games_loss')[0]['visitor_games_loss']))
-        for st in data:
-            ss+=','+st
-        print('$$$$$$$$$',ss)
-        print(path)
-        f = open(path,'a')#open path
-        f.write(ss+'\n')#write file
-    w(data, path,g)  
-    p = predict(model,path,username)#predict game
-    print(p)
 
-    #Set a bunch of values based on the prediction
+    game_values = g.values(
+        'gameid', 'home_spread', 'home_games_won', 'home_games_loss',
+        'home_streak', 'visitor_games_won', 'visitor_games_loss', 'visitor_streak',
+    )[0]
 
-    pmscore = float(p[0]-p[1])#plus minus prediction score 
-    spread = float(g.values('home_spread')[0]['home_spread'])*-1#spread used to make prediction
-    margin = abs(spread-pmscore)# calculate margin
-    print('spread ',g.values('home_spread')[0]['home_spread'],'pmscore ',p[0]-p[1])
-    print('spread ',spread,'pmscore ',pmscore)
-    if float(pmscore) < 0 and float(spread) < 0:
-        print('both negative')#think this not need anymore
-        #there was an issue here but i think abs(spread-pmscore) fixed it
-        #margin = pmscore+spread
-    #set game obj values
-    g.update(home_score_prediction=round(p[0],2))
-    g.update(visitor_score_prediction=round(p[1],2))
-    g.update(pmscore=p[0]-p[1])
-    g.update(margin=abs(margin))
-    g.update(model=model)
-    spread = float(g.values('home_spread')[0]['home_spread'])*-1#did this twice
-    #calculate spread prediction 0 if predicting visitor 1 for home
-    pmp = pmscore
-    print(spread,pmp)
-    pred = None
-    if spread>pmp and pmp <0:
-        pred = 0
-    elif spread>pmp and pmp >0:
-        pred = 0
-    elif spread<pmp and pmp <0:
-        pred = 1
-    elif spread<pmp and pmp >0:
-        pred = 1
-    #set that value
-    g.update(spread_prediction=pred)
-    #redirect back to dashboard maybe change in future to redirect back to game.
+    hgp = int(game_values['home_games_won']) + int(game_values['home_games_loss'])
+    vgp = int(game_values['visitor_games_won']) + int(game_values['visitor_games_loss'])
+    home_streak = int(game_values['home_streak'])
+    visitor_streak = int(game_values['visitor_streak'])
+
+    line = ','.join([
+        str(game_values['gameid']),
+        str(game_values['home_spread']),
+        homeid,
+        str(home_streak),
+        str(hgp),
+        str(game_values['home_games_won']),
+        str(game_values['home_games_loss']),
+        visitorid,
+        str(visitor_streak),
+        str(vgp),
+        str(game_values['visitor_games_won']),
+        str(game_values['visitor_games_loss']),
+    ] + data)
+
+    with open(path, 'a') as f:
+        f.write(line + '\n')
+
+    p = predict(model, path, user)
+
+    pmscore = float(p[0] - p[1])
+    spread = float(game_values['home_spread']) * -1
+    margin = abs(spread - pmscore)
+
+    g.update(
+        home_score_prediction=round(p[0], 2),
+        visitor_score_prediction=round(p[1], 2),
+        pmscore=p[0] - p[1],
+        margin=abs(margin),
+        model=model,
+        spread_prediction=_compute_spread_prediction(spread, pmscore),
+    )
+
     return redirect('home-predict')
-
 
 
 # Main game view, Shows teams prediction model selector, tables, injuries, and more...
@@ -2521,24 +2114,15 @@ def editGame(request,pk,**kwargs):
     gID = g.values('gameid')[0]['gameid']
     author = g.values('author')[0]['author']
     u = User.objects.filter(id=author).first()
-    print('gID:', gID)
     #game is messed up redirect home
     if gID is None:
         return redirect('home-predict')
-    #get labels
-    def get_labels():
-        lol= []
-        ll = ['ast','blk','dreb','fg3_pct','fg3a','fg3m','fga','fgm','fta','ftm','oreb','pf','pts','reb','stl', 'turnover', 'min']
-        for l in ll:
-            lol.append(l.upper())
-        return lol
+    context['labels'] = [l.upper() for l in labels]
 
-    context['labels']= get_labels()
-
-    path = 'csv/'+str(u.username)+str(csvid)+'.csv'
-    csv = open(path,'r+')
+    path = 'csv/' + str(u.username) + str(csvid) + '.csv'
+    csv = open(path, 'r+')
     header = ''
-    data= ''
+    data = ''
     first = True
     for line in csv.readlines():
         if first:
@@ -2548,74 +2132,44 @@ def editGame(request,pk,**kwargs):
             data = line
             break
     data = data.split(',')
-    header= header.split(',')
-    #pop game id, home and visitor team stats and spread
-    #doing this to leave only player data
-    #the player data is then mapped against any changes to the input data
-    data.pop(0)
-    header.pop(0)
-    data.pop(0)
-    header.pop(0)
-    data.pop(0)
-    header.pop(0)
-    data.pop(0)
-    header.pop(0)
-    data.pop(0)
-    header.pop(0)
-    data.pop(0)
-    header.pop(0)
-    data.pop(0)
-    header.pop(0)
-    data.pop(0)
-    header.pop(0)
-    data.pop(0)
-    header.pop(0)
-    data.pop(0)
-    header.pop(0)
-    #game already predicted? remove those values too
+    header = header.split(',')
+    _pop_csv_preamble(data, header)
     if g.values('visitor_score_prediction')[0]['visitor_score_prediction'] is not None:
         data.pop(0)
         header.pop(0)
         data.pop(0)
         header.pop(0)
     players = {}
-    oofnog = []#oofnog
-    for i in range(0,14):
-        #print(g.values('p'+str(i))[0]['p'+str(i)])
-        #adding player ids
-        oofnog.append(g.values('p'+str(i))[0]['p'+str(i)])
+    player_ids = []
+    for i in range(0, 14):
+        player_ids.append(g.values('p' + str(i))[0]['p' + str(i)])
     url = 'https://www.balldontlie.io/api/v1/players/'
-    resp = []
-    #print(oofnog)
-    for id in oofnog:#getting player names
+    player_names = []
+    for pid in player_ids:
         obj = load_obj('2019PlayerNamesByID')
-        #print(resp)
         found = False
         for x in obj:
-
-            if int(x) == int(id):
+            if int(x) == int(pid):
                 found = True
-                print('found-------')
-                resp.append(obj[x].replace("'", "-"))
+                player_names.append(obj[x].replace("'", "-"))
 
-        if not found:#cant find name request it from api
-            r = req(url+str(id))
+        if not found:
+            r = req(url + str(pid))
             fn = r['first_name']
             ln = r['last_name']
-            full = fn+' '+ln
-            resp.append(full)
-            obj.update({str(id) : full})
-            save_obj(obj,'2019PlayerNamesByID')
-    #set players
+            full = fn + ' ' + ln
+            player_names.append(full)
+            obj[str(pid)] = full
+            save_obj(obj, '2019PlayerNamesByID')
     c = 0
-    for oof in range(1,15):
-        n=17*oof-17
+    for oof in range(1, 15):
+        n = 17 * oof - 17
         temp = [str(oof)]
-        for f in range(n,n+17):
+        for f in range(n, n + 17):
             temp.append(data[f])
 
-        players.update({ resp[c] : temp })
-        c+=1
+        players.update({player_names[c]: temp})
+        c += 1
     #set context data
     context['pk'] = pk
     context['stats']= players
@@ -2685,12 +2239,12 @@ def editGame(request,pk,**kwargs):
     if vi is None:
         context['visitor_injury'] = 0
         context['visitor_injuries'] = 0
-       
+
     else:
         vi = vi.split(',')
         context['visitor_injury'] = len(vi)
         context['visitor_injuries'] = g.values('visitorInjury')[0]['visitorInjury']
-        
+
     context['game'] = g
     context['g'] = g
     context['model']=g.values('model')[0]['model']
@@ -2698,11 +2252,10 @@ def editGame(request,pk,**kwargs):
     try:
         modelSettings = load_obj(str(request.user.username)+'ModelSettings'+g.values('model')[0]['model'])
         context['customModel']=True
-        
+
     except FileNotFoundError:
         context['customModel']=False
-    
-    
+
 
     #set complex spread
     if g.values('complexSpread')[0]['complexSpread'] is not None:
@@ -2711,8 +2264,8 @@ def editGame(request,pk,**kwargs):
         for k in foo:
             foo[k]['name'] = k
             complexSpread.append(foo[k])
-        context['complexSpread'] = sortSpreadLines(complexSpread) 
-        
+        context['complexSpread'] = sortSpreadLines(complexSpread)
+
         context['complexSpreadDisplay'] = True
     context['history_display'] = True
     #set is your game
@@ -2720,7 +2273,7 @@ def editGame(request,pk,**kwargs):
         context['isAuthor'] = True
     else:
         context['isAuthor'] = False
-        
+
     teamAbvById = load_obj('teamAbvById')
     context['home_history_id'] = g.values('home_last_game')[0]['home_last_game']
     context['visitor_history_id'] = g.values('visitor_last_game')[0]['visitor_last_game']
@@ -2731,11 +2284,10 @@ def editGame(request,pk,**kwargs):
         context['history_display'] = False
 
         return render(request, 'predict/edit.html',context)
-    
+
 
     obj = load_obj('2019PlayerNamesByID')
     for player in hh[0]:
-        print('player: ',player)
         id = player['id']
         player.pop('teamid')
         try:
@@ -2747,7 +2299,6 @@ def editGame(request,pk,**kwargs):
             foundNewPlayer(id)
             player['name']=id
     for player in hh[1]:
-        print('player: ',player)
         id = player['id']
         player.pop('teamid')
         try:
@@ -2769,11 +2320,9 @@ def editGame(request,pk,**kwargs):
     context['hh_date'] = hh[6][:10]
 
 
-
     vh = json.loads(g.values('visitor_history')[0]['visitor_history'])
     context['vh_players'] = vh[0]
     for player in vh[0]:
-        print('player: ',player)
         id = player['id']
         player.pop('teamid')
         try:
@@ -2788,7 +2337,6 @@ def editGame(request,pk,**kwargs):
             player['name']=id
 
     for player in vh[1]:
-        print('player: ',player)
         id = player['id']
         player.pop('teamid')
         try:
@@ -2808,12 +2356,6 @@ def editGame(request,pk,**kwargs):
     context['vh_date'] = vh[6][:10]
 
 
-
-    #context['home_history'] = 
-
-
-
-    #print(players)
     #render main game page.
 
     try:
@@ -2821,7 +2363,6 @@ def editGame(request,pk,**kwargs):
         context['history2_display'] = True
 
         for player in hh2[0]:
-            print('player: ',player)
             id = player['id']
             player.pop('teamid')
             try:
@@ -2833,7 +2374,6 @@ def editGame(request,pk,**kwargs):
                 foundNewPlayer(id)
                 player['name']=id
         for player in hh2[1]:
-            print('player: ',player)
             id = player['id']
             player.pop('teamid')
             try:
@@ -2859,9 +2399,6 @@ def editGame(request,pk,**kwargs):
         context['history2_display'] = False
 
 
-
-
-
     try:
 
 
@@ -2870,7 +2407,6 @@ def editGame(request,pk,**kwargs):
         context['history2_display'] = True
 
         for player in vh2[0]:
-            print('player: ',player)
             id = player['id']
             player.pop('teamid')
             try:
@@ -2885,7 +2421,6 @@ def editGame(request,pk,**kwargs):
                 player['name']=id
 
         for player in vh2[1]:
-            print('player: ',player)
             id = player['id']
             player.pop('teamid')
             try:
@@ -2907,17 +2442,10 @@ def editGame(request,pk,**kwargs):
         context['history2_display'] = False
 
 
-
-
-
-
-
     return render(request, 'predict/edit.html',context)
 
 
-
 def foundNewPlayer(id):
-    print('found a new player with id : ', id)
 
     updatePlayerTeam('new player request',id)
 
@@ -2938,7 +2466,6 @@ def sortSpreadLines(complexSpread):
         min = 100000
         index = None
         for line in range(len(complexSpread)):
-            print(line)
             if complexSpread[line]['awayTeamSpread'] == 'PK':
                 complexSpread[line]['awayTeamSpread'] = 0
             if complexSpread[line]['homeTeamSpread'] == 'PK':
@@ -2956,23 +2483,20 @@ def sortSpreadLines(complexSpread):
 # if game is final the scores are used to calculate prediction correct or wrong
 # profile stats are then updated to match
 # returns redirect to dashboard
-def getScore(request,pk,**kwargs):
-
+def getScore(request, pk, **kwargs):
     url = 'https://www.balldontlie.io/api/v1/games/'
-    user= request.user
+    user = request.user
     g = Game.objects.filter(pk=pk).values('gameid')
     g = g[0]
     url += g['gameid']
-    r = req(url)#request api for scores
+    r = req(url)
     r = r['data']
-    h = r['home_team_score']#set home score
-    v= r['visitor_team_score']# set visitor score
-    print(request.user,'-----------------')
+    h = r['home_team_score']
+    v = r['visitor_team_score']
     p = Profile.objects.filter(user=request.user)
     po = Profile.objects.get(user=request.user)
 
-    if r['status'] == "Final":#is game score final??
-        #set final values and calculate correct not and at what margin level?
+    if r['status'] == "Final":
         prediction = Game.objects.filter(pk=pk).values('prediction')[0]['prediction']
         pmscore = Game.objects.filter(pk=pk).values('pmscore')[0]['pmscore']
         finished = Game.objects.filter(pk=pk).values('finished')[0]['finished']
@@ -2980,132 +2504,82 @@ def getScore(request,pk,**kwargs):
         home_score = Game.objects.filter(pk=pk).values('home_score')[0]['home_score']
         visitor_score = Game.objects.filter(pk=pk).values('visitor_score')[0]['visitor_score']
 
-        if not finished: # add not back
-            spread = float(spread)*-1
-            if pmscore >= 0 and h >v:#win p home
+        if not finished:
+            spread = float(spread) * -1
+            if pmscore >= 0 and h > v:
                 asdf = float(p.values('gain')[0]['gain'])
-                p.update(gain=asdf+abs(pmscore))
-                p.update(correct=p.values('correct')[0]['correct']+1)
+                p.update(gain=asdf + abs(pmscore))
+                p.update(correct=p.values('correct')[0]['correct'] + 1)
                 Game.objects.filter(pk=pk).update(winner=1)
-            if pmscore < 0 and h < v:#win p visitor
-                asdf = float(p.values('gain')[0]['gain']) 
-                p.update(gain=asdf+abs(pmscore))
-                p.update(correct=p.values('correct')[0]['correct']+1)
+            if pmscore < 0 and h < v:
+                asdf = float(p.values('gain')[0]['gain'])
+                p.update(gain=asdf + abs(pmscore))
+                p.update(correct=p.values('correct')[0]['correct'] + 1)
                 Game.objects.filter(pk=pk).update(winner=0)
-            if pmscore < 0 and h > v:#loose p vis
-                asdf = float(p.values('loss')[0]['loss']) 
-                p.update(loss=asdf+abs(pmscore))
+            if pmscore < 0 and h > v:
+                asdf = float(p.values('loss')[0]['loss'])
+                p.update(loss=asdf + abs(pmscore))
                 Game.objects.filter(pk=pk).update(winner=1)
-            if pmscore >= 0 and h < v:#loose p home
-                print('asdf')
-                asdf = float(p.values('loss')[0]['loss']) 
-                p.update(loss=asdf+abs(pmscore))
+            if pmscore >= 0 and h < v:
+                asdf = float(p.values('loss')[0]['loss'])
+                p.update(loss=asdf + abs(pmscore))
                 Game.objects.filter(pk=pk).update(winner=0)
-            print(Game.objects.filter(pk=pk).values('winner')[0]['winner'])
-            p.update(predictions=p.values('predictions')[0]['predictions']+1)
-
+            p.update(predictions=p.values('predictions')[0]['predictions'] + 1)
 
             pmp = pmscore
-            pmscore = int(h)-int(v)
+            pmscore = int(h) - int(v)
             margin = float(Game.objects.filter(pk=pk).values('margin')[0]['margin'])
-            pred = ''
-            print(spread,pmp)
 
-            if spread>pmp and pmp <0:
-                pred = 0
-            elif spread>pmp and pmp >0:
-                pred = 0
-            elif spread<pmp and pmp <0:
-                pred = 1
-            elif spread<pmp and pmp >0:
-                pred = 1
-
-            swin = ''#winner with spread 0 or 1 
-            print(spread,pmscore)
-            print(float(spread)<float(pmscore))
-            print(float(pmscore)>0)
-            if spread>pmscore and pmscore <0:
-                swin = 0
-            elif spread>pmscore and pmscore >0:
-                swin = 0
-            elif spread<pmscore and pmscore <0:
-                swin = 1
-            elif spread<pmscore and pmscore >0:
-                swin = 1
-            print('swin',swin)
-            print('pred:',pred)
-            print('pred , swin :',pred,swin)
+            pred = _compute_spread_prediction(spread, pmp)
+            swin = _compute_spread_prediction(spread, pmscore)
             mcorrect = False
-            #set ev_won same as margin 0....
             if pred == 0 and swin == 0:
                 mcorrect = True
                 Game.objects.filter(pk=pk).update(ev_won='1')
-
-                print('correct agaist spread',pred,swin)
             elif pred == 1 and swin == 1:
                 Game.objects.filter(pk=pk).update(ev_won='1')
                 mcorrect = True
-                print('correct agaist spread',pred,swin)
             else:
                 Game.objects.filter(pk=pk).update(ev_won='0')
                 mcorrect = False
-                print('wrong agaist spread pred:',pred,' swin',swin)
 
-            #set margin 1-3 
             if abs(margin) > 3:
                 if mcorrect:
                     Game.objects.filter(pk=pk).update(ev_margin3='1')
-                    asdf = int(p.values('ev_margin3')[0]['ev_margin3']) 
-                    p.update(ev_margin3=asdf+1)
-                asdf = int(p.values('ev_margin3_count')[0]['ev_margin3_count']) 
-                p.update(ev_margin3_count=asdf+1)
+                    asdf = int(p.values('ev_margin3')[0]['ev_margin3'])
+                    p.update(ev_margin3=asdf + 1)
+                asdf = int(p.values('ev_margin3_count')[0]['ev_margin3_count'])
+                p.update(ev_margin3_count=asdf + 1)
             if abs(margin) > 2:
                 if mcorrect:
                     Game.objects.filter(pk=pk).update(ev_margin2='1')
-                    asdf = int(p.values('ev_margin2')[0]['ev_margin2']) 
-                    p.update(ev_margin2=asdf+1)
-                asdf = int(p.values('ev_margin2_count')[0]['ev_margin2_count']) 
-                p.update(ev_margin2_count=asdf+1)
+                    asdf = int(p.values('ev_margin2')[0]['ev_margin2'])
+                    p.update(ev_margin2=asdf + 1)
+                asdf = int(p.values('ev_margin2_count')[0]['ev_margin2_count'])
+                p.update(ev_margin2_count=asdf + 1)
             if abs(margin) > 1:
                 if mcorrect:
                     Game.objects.filter(pk=pk).update(ev_margin1='1')
-                    asdf = int(p.values('ev_margin1')[0]['ev_margin1']) 
-                    p.update(ev_margin1=asdf+1)
-                asdf = int(p.values('ev_margin1_count')[0]['ev_margin1_count']) 
-                p.update(ev_margin1_count=asdf+1)
+                    asdf = int(p.values('ev_margin1')[0]['ev_margin1'])
+                    p.update(ev_margin1=asdf + 1)
+                asdf = int(p.values('ev_margin1_count')[0]['ev_margin1_count'])
+                p.update(ev_margin1_count=asdf + 1)
 
             if mcorrect:
-                asdf = int(p.values('ev_won')[0]['ev_won']) 
-                p.update(ev_won=asdf+1)
-            asdf = int(p.values('ev_won_count')[0]['ev_won_count']) 
-            p.update(ev_won_count=asdf+1)
+                asdf = int(p.values('ev_won')[0]['ev_won'])
+                p.update(ev_won=asdf + 1)
+            asdf = int(p.values('ev_won_count')[0]['ev_won_count'])
+            p.update(ev_won_count=asdf + 1)
 
-
-        #set game finished
         Game.objects.filter(pk=pk).update(finished=True)
-    #set scores
     Game.objects.filter(pk=pk).update(home_score=h)
     Game.objects.filter(pk=pk).update(visitor_score=v)
-    #print(pagenum)
-    #x = redirect("home-predict")
-    #return HttpResponsePermanentRedirect(reverse('home-predict') + "?page="+str(page_num))
-    #redirect back home, there is a bug where it always redirects to page 1 even if your on page 5....
     try:
         r = kwargs['redirect']
-        return redirect('edit-predict',pk)
-
+        return redirect('edit-predict', pk)
     except KeyError:
         return redirect('home-predict')
 
-
-
-# takes date str, request's api, and returns list of games
-
-
-from dateutil.parser import parse
-from backports.zoneinfo import ZoneInfo
-#replace with this import if on older python version
-#from backports.zoneinfo import ZoneInfo
 
 # takes date str, request's api, and returns list of games
 def todaysGames(date):
@@ -3113,9 +2587,7 @@ def todaysGames(date):
     eastern = timezone('America/Los_Angeles')
     fmt = '%Y-%m-%d'
     loc_dt = datetime.now(eastern)
-    #naive_dt = datetime.now()
     url+=date#create api url with current date
-    print(url)
     r = req(url)#request api url
     games = []
     for game in range(len(r['data'])):#iterate over response and create games obj
@@ -3126,13 +2598,12 @@ def todaysGames(date):
         vfn = r['data'][game]['visitor_team']['full_name']
         vscore = str(r['data'][game]['visitor_team_score'])
         status = r['data'][game]['status']
-        print(status)
         old=False
         if status != 'Final':
             try:
                 status = datetime.strptime(str(status), '%Y-%m-%dT%H:%M:%S%z').astimezone(ZoneInfo("US/Eastern")).strftime('%I:%M %p')
             except ValueError:
-                print('something went wrong')
+                pass
         foo = {'habv':habv,'hfn':hfn,'hscore':hscore,'vabv':vabv,'vfn':vfn,'vscore':vscore,'status':status,'date':date}
         games.append(foo)
     if len(games)==0:#set no games today
@@ -3164,10 +2635,8 @@ class GameListView(LoginRequiredMixin,ListView):
             eastern = timezone('America/Los_Angeles')
             fmt = '%Y-%m-%d'
             loc_dt = datetime.now(eastern)
-            #naive_dt = datetime.now()
             dateSelected =loc_dt.strftime(fmt)
-             
-        print(dateSelected)
+
         user = self.request.user
         context = super(GameListView, self).get_context_data(**kwargs)
         x = todaysGames(dateSelected)
@@ -3218,20 +2687,18 @@ class GameListView(LoginRequiredMixin,ListView):
         context['gain'] =  Profile.objects.filter(user=user).values('gain')[0]['gain']
         context['loss'] =  Profile.objects.filter(user=user).values('loss')[0]['loss']
         context['lg'] = Profile.objects.filter(user=user).values('gain')[0]['gain'] - Profile.objects.filter(user=user).values('loss')[0]['loss']
-        
-        #context['form'] = GameForm()
+
         context['dateselector'] = dateSelected
 
         context['ordering']= ['-date_posted']
         context['active']= True
         return context
-    #get list of games 
+    #get list of games
     def get_queryset(self, **kwargs):
         user = self.request.user
         return Game.objects.filter(author=user).order_by('-date_posted')
     #old not used anymore
     def form_valid(self, form):
-        print('-------------------')
         form.instance.author = self.request.user
         season = '2022'
 
@@ -3251,16 +2718,13 @@ class GameListView(LoginRequiredMixin,ListView):
         return super().form_valid(form)
 
 
-
 # Predict all button below todays games
 # takes date and model select, loops over games and predicts them
 # thing to note is no players are removed automatically
 # returns redirect for dashboard
 def predictAll(request,dateSelected,model,**kwargs):
-    print(dateSelected)
     #get todays games
     tg = todaysGames(dateSelected)
-    print(tg)
     model = str(model)
     for game in tg:#for game in todays games
         #create game using quick create function
@@ -3284,8 +2748,6 @@ def quickcreate(request,home,visitor,date):
     context = activeSub(request,context)
 
 
-
-
     if context['active']:
         if context['prediction_count']>=15000:
             return redirect('usage')
@@ -3296,19 +2758,13 @@ def quickcreate(request,home,visitor,date):
 
 
     pg = PermaGame.objects.create(author=request.user)
-    
 
-    #make up a random csvid 
-    csvid = random.randint(1,100000)
-    #set season #this will probably need manual updating in future
+
+    csvid = random.randint(1, 100000)
     season = '2022'
-    labels = ['ast','blk','dreb','fg3_pct','fg3a','fg3m','fga','fgm','fta','ftm','oreb','pf','pts','reb','stl', 'turnover', 'min']
-    #set path to csv
-    path = 'csv/'+str(request.user)+str(csvid)+'.csv'
+    path = 'csv/' + str(request.user) + str(csvid) + '.csv'
 
-    #get spread
-    spread = getSpread(home,visitor,date)
-    print(spread)
+    spread = getSpread(home, visitor, date)
     home_spread = spread[0]
     visitor_spread = spread[1]
     try:
@@ -3324,7 +2780,7 @@ def quickcreate(request,home,visitor,date):
     visitorTeamStats = stats[1]
     visitorTeamInjuryComplex = visitorTeamStats.pop(-1)
     visitorTeamInjury = visitorTeamStats.pop(-1)
-    
+
     home_streak = homeTeamStats.pop(-1)
     visitor_streak = visitorTeamStats.pop(-1)
 
@@ -3357,7 +2813,6 @@ def quickcreate(request,home,visitor,date):
         home_history=home_history,visitor_history=visitor_history,home_history2=home_history2,visitor_history2=visitor_history2)
     #redirect to game view
     return redirect('edit-predict',obj.pk)
-    #return redirect('home-predict')
 
 
 # Gets team data win/loss/streak
@@ -3366,7 +2821,7 @@ def quickcreate(request,home,visitor,date):
 
 
 def getTeamData(home,visitor):
-    
+
     convert = {
         'ATL' :'ATL',
         'BKN':  'BKN',
@@ -3407,8 +2862,8 @@ def getTeamData(home,visitor):
     querystring = {"schedules":"true","rosters":"true"}
 
 
-    key = 'a0f0cd0b5cmshfef96ed37a9cda6p1f67bajsnfcdd16f37df8'
-    
+    key = os.environ.get('TANK01_API_KEY', '')
+
     headers = {
         "X-RapidAPI-Key": key,
         "X-RapidAPI-Host": "tank01-fantasy-stats.p.rapidapi.com"
@@ -3421,12 +2876,9 @@ def getTeamData(home,visitor):
         now = datetime.now()
         time_diff = now-lastupdate
         seconds = time_diff.total_seconds()
-        print('Seconds since last update',seconds)
     except KeyError:
-        print('no saved team stats found')
         teamStats = {}
     if seconds == 0 or seconds>1800:
-        print('getting updated results')
 
         response = requests.request("GET", url, headers=headers, params=querystring).json()
         lastupdate = datetime.now()
@@ -3434,12 +2886,10 @@ def getTeamData(home,visitor):
         teamStats['lastupdate']=lastupdate
         save_obj(teamStats,'teamStats')
     else:
-        print('loaded cached results')
         response = teamStats['response']
     r = response['body']
     teamStats = {}
     for team in range(len(r)):
-        print(r[team]['teamAbv'])
         steak = r[team]['currentStreak']['result']
         steakLength = r[team]['currentStreak']['length']
         if steak == 'L':
@@ -3453,15 +2903,12 @@ def getTeamData(home,visitor):
         for player in r[team]['Roster']:
             if r[team]['Roster'][player]['injury']['description'] != '':
                 c+=1
-                #print(r[team]['Roster'][player]['injury']['injDate'])
-                #print(r[team]['Roster'][player]['nbaComName'])
                 d = r[team]['Roster'][player]['injury']['description']
                 if len(r[team]['Roster'][player]['injury']['description']) < 5:
                     d= "No Description"
                 try:
                     foo = [r[team]['Roster'][player]['nbaComName'],d,r[team]['Roster'][player]['injury']['injDate'],r[team]['Roster'][player]['injury']['designation'],r[team]['Roster'][player]['nbaComHeadshot']]
                 except KeyError:
-                    print('key error')
                     foo = [r[team]['Roster'][player]['nbaComName'],d,'',r[team]['Roster'][player]['injury']['designation'],r[team]['Roster'][player]['nbaComHeadshot']]
 
                 injuriesComplex.append(foo)
@@ -3469,14 +2916,10 @@ def getTeamData(home,visitor):
                 injuries.append(r[team]['Roster'][player]['nbaComName'])
         teamStats.update({r[team]['teamAbv']:[GP,W,L,steakLength,injuries,injuriesComplex]})
 
-    #print(teamStats)
-    #save_obj(teamStats,"teamStats")
-        
 
     return [teamStats[h],teamStats[v]]
 
 def getSpread(home,visitor,date):
-    print('date--------',date)
     date = date.replace('-', '')
     convert = {
         'ATL' :'ATL',
@@ -3518,7 +2961,7 @@ def getSpread(home,visitor,date):
     querystring = {"gameDate": date}
 
     headers = {
-        "X-RapidAPI-Key": "a0f0cd0b5cmshfef96ed37a9cda6p1f67bajsnfcdd16f37df8",
+        "X-RapidAPI-Key": os.environ.get('TANK01_API_KEY', ''),
         "X-RapidAPI-Host": "tank01-fantasy-stats.p.rapidapi.com"
     }
 
@@ -3533,12 +2976,9 @@ def getSpread(home,visitor,date):
         now = datetime.now()
         time_diff = now-lastupdate
         seconds = time_diff.total_seconds()
-        print('Seconds since last spread update',seconds)
     except KeyError:
-        print('no saved spread found')
         spreadCache = {}
     if seconds == 0 or seconds>60 or date != cacheDate:
-        print('getting updated spread odds')
         response = requests.request("GET", url, headers=headers, params=querystring).json()
         lastupdate = datetime.now()
         spreadCache['response']=response
@@ -3546,21 +2986,17 @@ def getSpread(home,visitor,date):
         spreadCache['date'] = date
         save_obj(spreadCache,'spreadCache')
     else:
-        print('loaded cached spread')
         response = spreadCache['response']
     r = response['body']
 
-    print(r)
     if len(r) < 1:
         return ['0','0']
     spread = {}
     books = ['fanduel','caesars_sportsbook','pointsbet','betrivers']
     for line in r:
         teams = line.split('_')[1].split('@')
-        print(teams)
         if teams[0] == convert[home] or teams[1] == convert[home]:
             if teams[0] == convert[visitor] or teams[1] == convert[visitor]:
-                print('spread------------')
 
                 for book in books:
 
@@ -3587,28 +3023,19 @@ def getSpread(home,visitor,date):
                         spread[book]['awayTeamMLOdds']=0
                         spread[book]['totalUnder']=0
                         spread[book]['totalOver']=0
-                print('complex spread report:',spread)
 
                 '''
 
-                print(r[line]['fanduel']['homeTeamSpread'])
-                print(r[line]['wynnbet']['homeTeamSpread'])
-                print(r[line]['caesars_sportsbook']['homeTeamSpread'])
-                print(r[line]['betmgm']['homeTeamSpread'])
-                
 
                 '''
-                
+
 
                 return [r[line]['fanduel']['homeTeamSpread'],r[line]['fanduel']['awayTeamSpread'],spread]
-
 
 
 # Predict future game, this the main web predict function...
 # returns found, gameid, and playerids
 def futureGame(spread,homeTeamStats,visitorTeamStats,date,homeAbv,visitorAbv,path, season,labels,removed_players):
-    print('removed player:',removed_players)
-    print(season)
     url = 'https://www.balldontlie.io/api/v1/games?dates[]='
     url+=date
     response = req(url)#request api for game
@@ -3619,9 +3046,8 @@ def futureGame(spread,homeTeamStats,visitorTeamStats,date,homeAbv,visitorAbv,pat
     for game in range(len(response['data'])):#find game in response
         ha = response['data'][game]['home_team']['abbreviation']
         va = response['data'][game]['visitor_team']['abbreviation']
-            
+
         if ha==homeAbv and va==visitorAbv:#found game
-            print('found--------123-------')
             found = True
             gameid = response['data'][game]['id']#set game id
             data = nextGame(gameid)
@@ -3633,42 +3059,42 @@ def futureGame(spread,homeTeamStats,visitorTeamStats,date,homeAbv,visitorAbv,pat
             data.update({'visitor_team_id':response['data'][game]['visitor_team']['id']})
             data.update({'home_team_score' : response['data'][game]['home_team_score']})
             data.update({'visitor_team_score' : response['data'][game]['home_team_score']})
-            
+
 
             #load team player rosters and season averages
             playerIdByTeamID = load_obj('2022PlayerIdByTeamID')
             seasonAverages = load_obj('2022SeasonAverages')
- 
+
             #get all home players
             homePlayers = []
             for player in playerIdByTeamID[homeTeamID]:
                 if str(player) not in removed_players:
                     homePlayers.append(player)
                 else:
-                    print('found removed player ', player)
+                    pass
             #get all visitor players
             visitorPlayers = []
             for player in playerIdByTeamID[visitorTeamID]:
                 if str(player) not in removed_players:
                     visitorPlayers.append(player)
                 else:
-                    print('found removed player ', player)
+                    pass
 
 
             homeTeam = []
             visitorTeam = []
             #get home team season averages
-            for id in homePlayers:
+            for pid in homePlayers:
                 if player not in removed_players:
-                    homeTeam.append(seasonAverages[id])
+                    homeTeam.append(seasonAverages[pid])
                 else:
-                    print('removed player: ', id)
+                    pass
             #get visitor team season averages
-            for id in visitorPlayers:
+            for pid in visitorPlayers:
                 if player not in removed_players:
-                    visitorTeam.append(seasonAverages[id])
+                    visitorTeam.append(seasonAverages[pid])
                 else:
-                    print('removed player: ', id)
+                    pass
 
 
             #get home team top 7 players by play time
@@ -3697,16 +3123,9 @@ def futureGame(spread,homeTeamStats,visitorTeamStats,date,homeAbv,visitorAbv,pat
                 visitorPlayers.pop(b)
 
 
-
-
-
-
-
-
             hlastID,hlastID2 = getLastGame(homeTeamID,date)
             vlastID,vlastID2 = getLastGame(visitorTeamID,date)
 
-            print(hlastID,vlastID,'----------+++-------')
 
             hurl = 'https://www.balldontlie.io/api/v1/stats?game_ids[]='+str(hlastID)+'&per_page=100'
             hLastGame = req(hurl)
@@ -3714,57 +3133,38 @@ def futureGame(spread,homeTeamStats,visitorTeamStats,date,homeAbv,visitorAbv,pat
             vLastGame = req(vurl)
 
 
-
             hurl2 = 'https://www.balldontlie.io/api/v1/stats?game_ids[]='+str(hlastID2)+'&per_page=100'
-            print('here is hurl2',hurl2)
             hLastGame2 = req(hurl2)
             vurl2 = 'https://www.balldontlie.io/api/v1/stats?game_ids[]='+str(vlastID2)+'&per_page=100'
-            print('here is vurl2',vurl2)
 
-            print('vurl2',vurl2)
             vLastGame2 = req(vurl2)
 
             home_history = formLastGame(hLastGame,homeTeamID)
             visitor_history = formLastGame(vLastGame,visitorTeamID)
 
-            print('h-last-game2',len(hLastGame2))
 
             home_history2 = formLastGame(hLastGame2,homeTeamID)
             visitor_history2 = formLastGame(vLastGame2,visitorTeamID)
 
 
-
             #print best players
-            print('visitor team:',len(bestV),bestVisitorIds) 
-            print('home team:',len(bestH),bestHomeIds) 
             #write csv header
             writeCSVHeader(labels, path)
             #write game input data to csv
 
             writeCSV(spread,homeTeamStats,visitorTeamStats,gameid,homeTeamID,visitorTeamID,bestH,bestV,path,home_history,visitor_history,home_history2,visitor_history2)
 
-            #return all the players ids we used to make game
             playerids = bestHomeIds+bestVisitorIds
 
 
     return found,gameid,playerids,hlastID,vlastID,json.dumps(home_history),json.dumps(visitor_history),json.dumps(home_history2),json.dumps(visitor_history2)
 
 
-
 #------------------------------------------------------------------------#
 
 
-
-
-
-
-
-
-
 def formLastGame(data,team):
-    print('forming last game data')
     if data is None or len(data)<1:
-        print('no ata=---------=========------------==========')
         return ''
     if int(data['data'][0]['game']['home_team_id']) == int(team):
         history_id = data['data'][0]['game']['home_team_id']
@@ -3781,7 +3181,7 @@ def formLastGame(data,team):
 
     opponent_players = []
     history_players = []
-    
+
     for player in  data['data']:
         p = {}
         try:
@@ -3789,7 +3189,6 @@ def formLastGame(data,team):
         except TypeError:
             continue
         p['teamid'] = player['team']['id']
-        print(player)
         for label in labels:
             if player['min'] is None:
                 continue
@@ -3802,7 +3201,6 @@ def formLastGame(data,team):
                 continue
             p[label] = player[label]
         if player['min'] is None:
-            print('min is none------------')
             continue
         if p['teamid'] == history_id:
             history_players.append(p)
@@ -3826,27 +3224,23 @@ def formLastGame(data,team):
             break
         best_player = opponent_players.pop(int(best))
         best_opponent_players.append(best_player)
-    
-    
-    print('--------------------------------------------')
+
+
     return[best_history_players,best_opponent_players,history_score,opponent_score,gameid,opponent_id,game_date]
 
 
 def historyBestPlayer(players):
-    #print('players len ----------',len(players))
     best = ''
     topMin = 0
     for player in range(len(players)):
         min = players[player]['min']
         min = min.split(':')[0]
-        #print(min,topMin)
         if min == '':
             continue
         if int(min) >= int(topMin):
             best = player
             topMin = min
     return best
-
 
 
 def getLast10Games(teamid, date,bypass=False):
@@ -3857,15 +3251,14 @@ def getLast10Games(teamid, date,bypass=False):
 
     # Convert from string format to datetime format
     inputDate = datetime.strptime(date, format)
-    
+
     # Define the start and end date for the API call
     start = (inputDate - timedelta(days=360)).strftime(format)
     end = (inputDate - timedelta(days=1)).strftime(format)
-    
+
     # Your API call logic remains unchanged
     url = f'https://www.balldontlie.io/api/v1/games?start_date={start}&end_date={end}&team_ids[]={teamid}&per_page=100'
 
-    #save_obj({},'lg10c')
     lg10c = load_obj('lg10c')
     r = []
     try:
@@ -3883,7 +3276,7 @@ def getLast10Games(teamid, date,bypass=False):
 
     # Filter out games without scores and sort them by closeness to the input date
     valid_games = [game for game in games if int(game['home_team_score']) != 0 and int(game['visitor_team_score']) != 0 and game['status']=='Final']
-    
+
     def parse_game_date(game):
         try:
             return datetime.strptime(game['date'], datetime_format)
@@ -3903,7 +3296,7 @@ def getLastGame(teamid, date):
 
     # Convert from string format to datetime format
     inputDate = datetime.strptime(date, format)
-    
+
     today = inputDate - timedelta(days=360)
     start = today.strftime("%Y-%m-%d")
     today = inputDate - timedelta(days=1)
@@ -3963,7 +3356,6 @@ def writeCSV(spread,homeTeamStats,visitorTeamStats,game,homeId,visitorId,bestH,b
     line += ','+str(home_history[2])
     line += ','+str(home_history[3])
     line += ','+str(home_history[4])
-    print(home_history[2],home_history[3],'--=-=-==-=-==-=-=--==-')
     for player in home_history[0]:
             for label in labels:
                 line += ','+str(player[label])
@@ -3974,7 +3366,6 @@ def writeCSV(spread,homeTeamStats,visitorTeamStats,game,homeId,visitorId,bestH,b
     line += ','+str(visitor_history[2])
     line += ','+str(visitor_history[3])
     line += ','+str(visitor_history[4])
-    print(visitor_history[2],visitor_history[3],'--=-=-==-=-==-=-=--==-')
 
     for player in visitor_history[0]:
             for label in labels:
@@ -3984,13 +3375,9 @@ def writeCSV(spread,homeTeamStats,visitorTeamStats,game,homeId,visitorId,bestH,b
                 line += ','+str(player[label])
 
 
-
-
-
     line += ','+str(home_history2[2])
     line += ','+str(home_history2[3])
     line += ','+str(home_history2[4])
-    print(home_history2[2],home_history2[3],'--=-=-==-=-==-=-=--==-')
     for player in home_history2[0]:
             for label in labels:
                 line += ','+str(player[label])
@@ -3999,11 +3386,9 @@ def writeCSV(spread,homeTeamStats,visitorTeamStats,game,homeId,visitorId,bestH,b
                 line += ','+str(player[label])
 
 
-
     line += ','+str(visitor_history2[2])
     line += ','+str(visitor_history2[3])
     line += ','+str(visitor_history2[4])
-    print(visitor_history2[2],visitor_history2[3],'--=-=-==-=-==-=-=--==-')
 
     for player in visitor_history2[0]:
             for label in labels:
@@ -4013,9 +3398,6 @@ def writeCSV(spread,homeTeamStats,visitorTeamStats,game,homeId,visitorId,bestH,b
                 line += ','+str(player[label])
 
 
-
-
-    
     csv = open(path,'a')#open csv
     csv.write(line+'\n')#write line
 
@@ -4057,15 +3439,10 @@ def writeCSVHeader(labels, path,**kwargs):
                 header+=','+foo+str(i)+'_'+label
 
 
-
-
-
     #write header
     csv = open(path,'w')
     csv.write(header+'\n')
     return header
-
-
 
 
 #------------------------------------------------------------------------#
@@ -4081,7 +3458,6 @@ def getBestPlayer(team):
             continue
         min = team[player][-1]#set current player min
         min = min.split(':')[0]#convert to minute value from 20:32 to 20
-        #print(min,topMin)
         if int(min) >= int(topMin):#is this player better then top players
             best = player#set new best
             topMin = min#set new best minute value
@@ -4112,10 +3488,8 @@ def nextGame(gameid):
 # used to need proxies due to request getting blocked
 # but nolonger using proxies, just makes request and returns json obj
 def req(url):
-    print('requestion--------')
-    print(url)
-   
-    api_key = '5576ed00-d304-4c57-aa99-9269a8aef1fe'
+
+    api_key = os.environ.get('BALLDONTLIE_API_KEY', '')
     headers = {
         'Authorization': api_key
     }
@@ -4123,8 +3497,6 @@ def req(url):
     url = url.replace('/api/v1', '/v1', 1)
     r = requests.get(url,headers=headers)#request url
     if str(r) != '<Response [200]>':#means we request too fast
-        print('got ---- bad reply')
-        print(r)
         time.sleep(5)#wait 5 seconds
         req(url)
     return r.json()
@@ -4141,7 +3513,7 @@ def load_obj(name):
 
 # Loads tensorflow model and predicts game
 # Takes model number path of csv file and username
-# returns prediction 
+# returns prediction
 
 def predict(modelNum,path,username):
     #read csv file and cread pandas df
@@ -4198,7 +3570,7 @@ def predict(modelNum,path,username):
             features.append('stl')
         if modelSettings['turnover'] == 'true':
             features.append('turnover')
-        
+
 
         for currentPlayer in range(0,int(modelSettings['players'])):
             derp = ['home_', 'visitor_']
@@ -4215,10 +3587,6 @@ def predict(modelNum,path,username):
     data = data.values
     #convert values to floats
     data = data.astype(float)
-
-
-    #x_train = tf.keras.utils.normalize(x_train, axis=1)
-    #x_test = tf.keras.utils.normalize(x_test, axis=1)
 
 
     #define squential model
@@ -4242,7 +3610,6 @@ def predict(modelNum,path,username):
     #make prediction
     p = model.predict(data)
     return(p[0])
-
 
 
 # request for spread api
