@@ -186,34 +186,7 @@
         </div>
     </div>
     
-    <script>
-    
-    
-    
-         window.addEventListener('load', function () {
-    
-            document.getElementById("m-scoll").scrollTop = $(window).height()
-    
-        })
-    
-        function sendMessage(){
-            el = document.getElementById('message-input')
-            console.log(el.value)
-            window.location.href = '/new-message/'+el.value
-    
-    
-    
-        }   
-    
-    </script>
-    <style>
-        @media screen and (max-width: 500px) {
-      #detail{
-        display:none;
-      }
-    
-    }
-    </style>
+    <link rel="stylesheet" href="{% static 'predict/stats.css' %}">
 
 
 

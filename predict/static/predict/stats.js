@@ -1,4 +1,3 @@
-
 const correct = JSON.parse(document.getElementById('correct').textContent);
 const numpred = JSON.parse(document.getElementById('np').textContent)-correct;
 const gain = JSON.parse(document.getElementById('gain').textContent);
@@ -448,3 +447,13 @@ const barConfig = {
 
 
   const myChart = new Chart(document.getElementById('barChart'),barConfig);
+
+window.addEventListener('load', function () {
+  document.getElementById("m-scoll").scrollTop = $(window).height();
+});
+
+function sendMessage() {
+  el = document.getElementById('message-input');
+  console.log(el.value);
+  window.location.href = '/new-message/' + el.value;
+}

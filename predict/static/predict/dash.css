@@ -1,0 +1,79 @@
+@media screen and (max-width: 700px) {
+  #shop-btn, #header-label {
+    display: none !important;
+  }
+  #nba-emoji {
+    margin-right: 0px !important;
+  }
+  #game-vs-display {
+    display: none !important;
+  }
+  #game-vs-mobile-display {
+    display: block !important;
+    margin-top: 35px !important;
+  }
+  #player-image {
+    height: 85px !important;
+    margin-top: 25px !important;
+  }
+  #player-display {
+    display: none;
+  }
+}
+
+#myChart {
+  margin-top: 10px;
+  max-height: 175px !important;
+}
+@media screen and (max-width: 1000px) {
+  .top-stats {
+    display: none;
+  }
+  .lock-overlay {
+    margin-top: 450px !important;
+  }
+}
+.big-btn {
+  border: 1px solid rgba(198, 198, 198, 0.2);
+}
+.big-btn:hover {
+  border: 1px solid var(--main-border-color);
+  background-color: var(--event-hvr-background) !important;
+}
+
+.blur-overlay {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.8);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  padding: 25px;
+}
+
+.lock-icon {
+  width: 50px;
+  height: 50px;
+}
+
+.blurred {
+  filter: blur(4px);
+}
+
+.big-btn:hover {
+  background-color: rgba(172, 172, 172, 0.15) !important;
+}
+
+#game:hover {
+  border: 1px solid var(--main-border-color);
+  background-color: var(--event-hvr-background) !important;
+}
+
+#lock-sub {
+  display: none !important;
+}
+#games-div {
+  display: none !important;
+}

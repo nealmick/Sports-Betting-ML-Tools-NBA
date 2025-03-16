@@ -1,0 +1,122 @@
+@media screen and (max-width: 600px) {
+
+.mobile-hide{
+  display: none;
+}
+#c{
+  height:100px !important;
+}
+}
+
+    #chartContainer {
+        width: 100%;
+        height: 400px; /* Fixed height */
+    }
+    #vegasOddsChart {
+        width: 100% !important;
+        height: 100% !important;
+    }
+
+  .big-btn{
+    border: 1px solid rgba(198, 198, 198, 0.2);
+    background-color: var(--event-background);
+
+
+    }
+    .big-btn:hover{
+        border: 1px solid var(--main-border-color);
+      background-color: var(--event-hvr-background);
+
+
+    }
+    table{
+      border: 1px solid rgba(198, 198, 198, 0.2) !important;
+
+    }
+
+
+      #chartContainer1, #chartContainer2 {
+        width: 100%; /* Only a minimum height to ensure there is some initial space */
+        height: 400px; /* Only a minimum height to ensure there is some initial space */
+      }
+      #totalPointsChart {
+            width: 100% !important;
+            height: 100% !important;
+        }
+        #radarChart {
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+  td{
+    border: 1px solid var(--table-color) !important;
+
+  }
+    #input-players tr:nth-child(9 ) td {
+      margin-top: 10px;
+      border-top: 2px dashed rgb(122, 122, 122) !important;
+    }
+    @media screen and (min-width: 500px) {
+
+
+  .edit-mobile{
+      display:none;
+    }
+  }
+
+    @keyframes subtleGlow {
+        0% { box-shadow: 0 0 5px rgba(0, 0, 0, 0.3); }
+        50% { box-shadow: 0 0 10px rgba(0, 0, 0, 0.5); }
+        100% { box-shadow: 0 0 5px rgba(0, 0, 0, 0.3); }
+    }
+    
+      .glow-btn {
+          animation: subtleGlow 10s ease-in-out infinite;
+      }
+       hr{
+        margin-top:5px !important;
+        margin-bottom:5px !important;
+        background-color: var(--main-font-color) !important;
+        opacity:.2 !important
+      }
+
+  @media screen and (max-width: 750px) {
+      #team-logo{
+        height:11vh !important;
+        margin-top:3vh !important
+        
+      }
+      .lg-display{
+        display:none;
+      }
+      .lg-display-score{
+         margin-top:35px;
+      } 
+      .col-12{
+
+        padding-right: 0px !important; 
+        padding-left: 0px !important; 
+      }
+
+    }
+
+    td,th{
+        text-align: center;
+    }
+    .modal{
+      z-index:1000000 !important;
+    }
+    .injury{
+      background-color: var(--event-background);
+      border-radius: 10px;
+      padding:5px;
+      margin-left:10px;
+      margin-right:10px;
+
+    }
+  
+    .book-link{
+      border: 1px solid transparent;
+
+    }
+    

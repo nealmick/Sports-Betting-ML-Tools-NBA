@@ -46,216 +46,12 @@
 </div>
 
 
-<script>
-    document.addEventListener("DOMContentLoaded", function() {
-  
-      // Check if the welcome message has been shown
-      if (!localStorage.getItem('welcomeShownArb')) {
-          // Show the popup and apply blur effect
-          //document.getElementById("welcomePopup").style.display = "flex";
-          //document.getElementById("mainContent").classList.add("blur");
-      }
-  
-      // Add event listener to the close button
-      document.getElementById("closePopup").addEventListener("click", function() {
-          // Hide the popup and remove blur effect
-
-      });
-  });
-  function welcome(){
-    document.getElementById("welcomePopup").style.display = "none";
-
-    // Set local storage item to indicate the message has been shown
-    localStorage.setItem('welcomeShownArb', 'true');
-  }
-  </script>
-<style>
-    #welcomePopup .welcome-list {
-    padding-left: 20px !important; /* Adds space for bullets */
-}
-
-#welcomePopup .welcome-list li {
-    list-style-type: disc !important; /* Ensures bullets are shown */
-    display: list-item !important; /* Ensures list item display */
-}
-  #welcomePopup {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.5);
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      z-index: 100000;
-  }
-
-  .popup-content {
-      color:var(--main-font-color)!important;
-
-      background: var(--main-modal-color)!important;
-      padding: 20px;
-      border-radius: 5px;
-  }
-</style>
+<link rel="stylesheet" href="{% static 'predict/arb.css' %}">
 
 
 
 
 
-
-
-
-
-
-<style>
-.spinner-container {
-    display: flex;
-    flex-direction: column; /* Stack children vertically */
-    justify-content: center;
-    align-items: center;
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0,0,0, 0.8);
-    z-index: 9999;
-
-}
-
-
-.spinner {
-    border: 5px solid #f3f3f3;
-    border-top: 5px solid #E97827;
-    border-radius: 50%;
-    width: 50px;
-    height: 50px;
-    animation: spin 2s linear infinite;
-
-}
-
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
-@media screen and (min-width: 750px) {
-    .mobile-info{
-        display:none !important
-    }
-}
-@media screen and (max-width: 750px) {
-    .col-12 {
-        flex: 0 0 100%;
-        max-width: 100%;
-        padding-right: 0;
-        padding-left: 0;
-    }
-    .modal{
-        width:100% !important
-    }
-    .modal-dialog{
-        padding-left:0px !important;
-        padding-right:0px !important;
-        margin-right:0px !important;
-        margin-left:0px !important;
-        margin-bottom:0px !important;
-
-    }
-    img{
-        max-width: 50px !important;
-    }
-    .desktop-odds{
-        display: none;
-    }
-    .mobile-team{
-        display: block;
-    }
-    .mobile-odds{
-        display: block;
-    }
-    .mobile-info{
-        display:inline !important
-    }
-                               
-}
-
-</style>
-
-
-<script>
-
-    document.addEventListener('DOMContentLoaded', function () {
-        const regionSelect = document.getElementById('region');
-
-        // Load the stored region selection
-        const storedRegion = localStorage.getItem('selectedRegion');
-        if (storedRegion) {
-            regionSelect.value = storedRegion;
-        }
-
-        // Update local storage when the region changes
-        regionSelect.addEventListener('change', function () {
-            localStorage.setItem('selectedRegion', this.value);
-        });
-    });
-
-    document.addEventListener('DOMContentLoaded', function () {
-        const refreshButton = document.getElementById('refreshButton');
-        const regionSelect = document.getElementById('region');
-        const spinner = document.getElementById('spinner'); // Get the spinner element
-
-        // Update the refresh button's URL based on the selected region
-        refreshButton.addEventListener('click', function (event) {
-            event.preventDefault(); // Prevent the default link behavior
-            const selectedRegion = regionSelect.value;
-
-            const baseUrl = '{% if not active %}/autoshop/{% else %}/predict/arb/refresh/{% endif %}';
-            {% if active %}
-            const newUrl = baseUrl + selectedRegion;
-            {% else %}
-            const newUrl = baseUrl
-            {% endif %}
-            spinner.style.display = 'flex';
-            window.location.href = newUrl; // Redirect to the new URL
-        });
-    });
-
-    document.addEventListener('DOMContentLoaded', function() {
-
-        const regionSelect = document.getElementById('region');
-
-        // Function to display the correct bookmaker list
-        function displayCorrectBookmakers(region) {
-            const bookmakerLists = document.querySelectorAll('.bookmakers-list');
-            bookmakerLists.forEach(list => list.classList.add('d-none'));
-            const activeList = document.getElementById(region + '-books');
-            if (activeList) {
-                activeList.classList.remove('d-none');
-            }
-        }
-
-        // Load and display the stored region selection
-        const storedRegion = localStorage.getItem('selectedRegion') || 'us';
-        regionSelect.value = storedRegion;
-        displayCorrectBookmakers(storedRegion);
-
-        // Update local storage and display when the region changes
-        regionSelect.addEventListener('change', function() {
-            localStorage.setItem('selectedRegion', this.value);
-            displayCorrectBookmakers(this.value);
-        });
-    });
-</script>
-<style>
-    .btn-grey-secondary:hover{
-  border: 1px solid #a5a5a5 !important;
-  background-color: #fc861e !important;
-
-
-}
-</style>
 
 
 
@@ -317,47 +113,6 @@
         <h3 style="display:inline">Bookies</h3>
         <h5 style="float: right;display:inline;color:#6dac56 !important"><i class="fa-sharp fa-solid fa-up"></i> 62</h5>
       <canvas id="myChart" width="600" height="300" style="margin-top:5px;max-height: 180px !important"></canvas>
-      <script>
-         
-          const labels = ['USA', 'EU', 'UK', 'AU'];
-          const data = {
-              labels: labels,
-              datasets: [
-                  {
-                      label: 'Bookies',
-                      data: [15, 18, 18, 11],
-                      
-                      backgroundColor: 'rgba(252, 134, 30, 0.5)',
-                        borderColor: "#fc861e",
-                      borderWidth: 2,
-                      borderRadius: Number.MAX_VALUE, // Fully rounded corners
-                      borderSkipped: false,
-                      barPercentage: 0.5,
-                      categoryPercentage: 0.5,
-                  }
-              ]
-          };
-      
-          const config = {
-              type: 'bar',
-              data: data,
-              options: {
-                  indexAxis: 'x', // Makes the bar chart vertical
-                  scales: {
-                      y: {
-                          beginAtZero: true,
-                      }
-                  },
-                  plugins: {
-                      legend: {
-                          display: false,
-                      }
-                  }
-              },
-          };
-      
-          var myChart = new Chart(document.getElementById('myChart'), config);
-      </script>
       
     </div>
   </div>
@@ -484,40 +239,7 @@
                         </div>
                     </div>
                     
-                    <script>
-                        function calculateArbitrage() {
-                            // Input sanitization and conversion
-                            let wager1Amount = parseFloat(document.getElementById('wager1Amount').value) || 0;
-                            let odds1 = parseFloat(document.getElementById('wager1Odds').value);
-                            let odds2 = parseFloat(document.getElementById('wager2Odds').value);
-                    
-                            // Convert American odds to decimal
-                            const decimalOdds1 = odds1 > 0 ? odds1 / 100 + 1 : -100 / odds1 + 1;
-                            const decimalOdds2 = odds2 > 0 ? odds2 / 100 + 1 : -100 / odds2 + 1;
-                    
-                            // Calculate the amounts to wager
-                            let wager2Amount = (wager1Amount * decimalOdds1) / decimalOdds2;
-                            
-                            // Prevent negative wager scenario
-                            if (wager1Amount < 0 || wager2Amount < 0) {
-                                alert("Wager amounts cannot be negative.");
-                                return;
-                            }
-                    
-                            // Calculate total wager and payout for the original bet
-                            let totalWager = wager1Amount + wager2Amount;
-                            let payout = wager1Amount * decimalOdds1;
-                    
-                            // Calculate profit
-                            let profit = payout - totalWager;
-                    
-                            // Update UI
-                            document.getElementById('wager2Amount').textContent = `$${wager2Amount.toFixed(2)}`;
-                            document.getElementById('totalWager').textContent = `$${totalWager.toFixed(2)}`;
-                            document.getElementById('profit').textContent = `$${profit.toFixed(2)}`;
-                            document.getElementById('percentReturn').textContent = `${((profit / totalWager) * 100).toFixed(2)}%`;
-                        }
-                    </script>
+
               </div>
             </div>
           </div>
@@ -573,93 +295,7 @@
                 </div>
 
                 {% endfor %}
-            <script>
-                var usBooks = {{ bookmakers_list | safe }};
-                var auBooks = {{ au_books | safe }};
-                var euBooks = {{ eu_books | safe }};
-                var ukBooks = {{ uk_books | safe }};
-                // Function to normalize bookmaker names
-                function normalizeBookmakerName(name) {
-                    var selectedRegion = document.getElementById('region').value;
-                     if(name === 'Unibet' && selectedRegion === 'us'){
-                        name='unibet_us'
-                    }
-                    if(name === 'LowVig.ag'){
-                        name='lowvig'
-                    }
-                    return name.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-                }
-            
-                function filterArbitrage() {
-                    var uncheckedBookmakers = new Set();
-                    var selectedRegion = document.getElementById('region').value;
-                    document.querySelectorAll('#' + selectedRegion + '-books input[name="bookmakers"]:not(:checked)').forEach(function(checkbox) {
-                        uncheckedBookmakers.add(normalizeBookmakerName(checkbox.value));
-                    });
-                    
-                    document.querySelectorAll('.col-lg-4').forEach(function(colDiv) {
-                        var cardBookmakers = Array.from(colDiv.querySelectorAll('.line-book')).map(element => normalizeBookmakerName(element.textContent.trim()));
-                        var isHidden = cardBookmakers.some(bookmaker => uncheckedBookmakers.has(bookmaker));
-                        colDiv.style.display = isHidden ? 'none' : ''; // Apply display none to the .col-lg-4 div
-                    });
-                }
-            
-                function saveFilters() {
-                    var selectedRegion = document.getElementById('region').value;
-                    var selectedBookmakers = {};
-                    selectedBookmakers[selectedRegion] = [];
-
-                    var regionBookmakers = [];
-                    if (selectedRegion === 'au') {
-                        regionBookmakers = auBooks;
-                    } else if (selectedRegion === 'eu') {
-                        regionBookmakers = euBooks;
-                    }
-                    else if (selectedRegion === 'uk') {
-                        regionBookmakers = ukBooks;
-                    }
-                    else if (selectedRegion === 'us') {
-                        regionBookmakers = usBooks;
-                    }
-                    regionBookmakers.forEach(bookmaker => {
-                        var checkboxId = 'bookmaker-' + selectedRegion + '-' + bookmaker;
-                        var checkbox = document.getElementById(checkboxId);
-                        if (checkbox && checkbox.checked) {
-                            selectedBookmakers[selectedRegion].push(bookmaker);
-                        }
-                    });
-
-                    localStorage.setItem('selectedBookmakers', JSON.stringify(selectedBookmakers));
-                    filterArbitrage();
-                }
-
-                document.addEventListener('DOMContentLoaded', function() {
-                        var selectedRegion = document.getElementById('region').value;
-
-                        var savedBookmakers = JSON.parse(localStorage.getItem('selectedBookmakers')) || {};
-                        var selectedRegion = document.getElementById('region').value;
-                        var checkboxes = document.querySelectorAll('#' + selectedRegion + '-books input[name="bookmakers"]');
-                        //console.log(savedBookmakers)
-                        //console.log(checkboxes)
-                        if (savedBookmakers[selectedRegion]) {
-                            checkboxes.forEach(checkbox => checkbox.checked = savedBookmakers[selectedRegion].includes(checkbox.value));
-                            //checkboxes.forEach(checkbox => console.log(savedBookmakers[selectedRegion].includes(checkbox.value)));
-                        } else {
-                            checkboxes.forEach(checkbox => checkbox.checked = true);
-                        }
-
-                        filterArbitrage();
-                    });
-            
-                document.querySelectorAll('input[name="bookmakers"]').forEach(checkbox => {
-                    checkbox.addEventListener('change', saveFilters);
-                });
-            </script>
-            
-
             </div>
-            
-        </div>
         
         <hr>
         <div class="row " >
@@ -789,22 +425,6 @@
 
                                 >
                                 </input>
-                                <script>
-                                    var latestOddsMap = {};
-                                
-                                    // Function to initialize the latest odds for each modal
-                                    function initializeLatestOdds(counter, odds1, odds2) {
-                                        latestOddsMap[counter] = {
-                                            odds1: odds1,
-                                            odds2: odds2
-                                        };
-                                    }
-                                
-                                    // Call this function for each modal to initialize the odds
-                                    {% for opportunity in opportunities %}
-                                        initializeLatestOdds({{ forloop.counter }}, {{ opportunity.lines.0.odds }}, {{ opportunity.lines.1.odds }});
-                                    {% endfor %}
-                                </script>
     
                         <!-- Display Updated Values -->
                         <p class="text-muted" style="margin-top:15px">
@@ -817,139 +437,6 @@
                         {% endwith %}
                         {% endif %}
                         <canvas id="chartCanvas{{ forloop.counter }}" style="width:100%;max-width:600px;height:250px;"></canvas>
-                        
-                        <script>
-
-                        function fetchAndRenderChart(eventId, sportKey, modalCounter) {
-                            {% if  not active %}
-                            if(modalCounter >= 0 ){
-                                window.location.href = '/autoshop/'
-
-                            }
-                     
-                            {%else%}
-                            fetch(`/predict/history-arb/?event_id=${eventId}&sport_key=${sportKey}`)
-                                .then(response => response.json())
-                                .then(data => {
-                                    renderChart(data, modalCounter);
-                                })
-                                .catch(error => console.error('Error:', error));
-                            {%endif%}
-                        }
-                        function renderChart(chartData, modalCounter) {
-                            // Reverse the labels array (timestamps)
-                            chartData.labels.reverse();
-
-                            // Reverse each dataset's data array
-                            chartData.datasets.forEach(dataset => {
-                                dataset.data.reverse();
-                            });
-
-                            var ctx = document.getElementById('chartCanvas' + modalCounter).getContext('2d');
-
-                            // Check if the screen width is less than 750px
-                            var hideXAxisLabels = window.innerWidth < 750;
-
-                            var myChart = new Chart(ctx, {
-                                type: 'line',
-                                data: chartData,
-                                options: {
-                                    elements: {
-                                        line: {
-                                            tension: 0.4  // Adjust for smoothing
-                                        }
-                                    },
-                                    scales: {
-                                        x: {  // 'x' replaces 'xAxes' in Chart.js version 3
-                                            display: !hideXAxisLabels, // Hide x-axis labels on small screens
-                                            // ... other x scale options
-                                        },
-                                        // ... other scales options
-                                    },
-                                    plugins: {
-                                        // Plugin options like legends, titles, etc.
-                                    },
-                                    // Other global options
-                                }
-                            });
-                        }
-
-                      
-
-
-                        function refreshOdds(eventId, bookmakers, counter) {
-                            fetch(`/predict/update-arb/?event_id=${eventId}&bookmakers[]=${bookmakers.join('&bookmakers[]=')}`)
-                            .then(response => response.json())
-                            .then(data => {
-                                var updatedOdds = data[eventId];
-                                if (updatedOdds && updatedOdds.odds) {
-                                    var newOdds1, newOdds2;
-                                    var index = 1; // Start from 1, assuming this matches your Django template forloop.counter
-                                    for (const [bookmakerKey, markets] of Object.entries(updatedOdds.odds)) {
-                                        var h2hMarket = markets.find(market => market.key === 'h2h');
-                                        if (h2hMarket) {
-                                            h2hMarket.outcomes.forEach(outcome => {
-                                                if (index === 1) {
-                                                    newOdds1 = outcome.price; // Store the first odds value
-                                                } else if (index === 2) {
-                                                    newOdds2 = outcome.price; // Store the second odds value
-                                                }
-                                                if (index === 1) {
-                                                    latestOddsMap[counter].odds1 = outcome.price; // Update the specific modal's odds
-                                                } else if (index === 2) {
-                                                    latestOddsMap[counter].odds2 = outcome.price; // Update the specific modal's odds
-                                                }
-                                                var oddsElementId = `odds-display-${counter}-${index}`;
-                                                console.log(oddsElementId)
-                                                var oddsElement = document.getElementById(oddsElementId);
-                                                if (oddsElement) {
-                                                    oddsElement.innerHTML = `Updated Odds: ${outcome.price}`;
-                                                }
-                                                index++; // Increment index for the next outcome
-                                            });
-                                        }
-                                    }
-                                    // Call updateBankroll with new odds if they are available
-                                    if (newOdds1 !== undefined && newOdds2 !== undefined) {
-                                        updateBankroll(counter, newOdds1, newOdds2);
-                                    }
-                                }
-                            })
-                            .catch(error => console.error('Error:', error));
-                        }
-
-                               
-
-                   function updateBankroll(counter, odds1, odds2) {
-                        var slider = document.getElementById('bankroll-input' + counter);
-                        var bankrollDisplay = document.getElementById('bankroll-display' + counter);
-                        var otherSplitDisplay = document.getElementById('other-split' + counter);
- 
-                        var newProfitOutcome1Display = document.getElementById('newProfitOutcome1' + counter);
-                        var newProfitOutcome2Display = document.getElementById('newProfitOutcome2' + counter);
-
-                        var totalBankroll = 100; // Assuming total bankroll is 100 units for simplicity
-                        var bankrollPercentage = parseFloat(slider.value);
-                        var otherSplitPercentage = 100 - bankrollPercentage;
-
-                        bankrollDisplay.innerHTML = 'Bankroll: '+bankrollPercentage.toFixed(1) + '%';
-                        otherSplitDisplay.innerHTML = 'Bankroll: '+otherSplitPercentage.toFixed(1) + '%';
-
-                        // Calculate stakes based on the slider value
-                        var stake1 = totalBankroll * (bankrollPercentage / 100);
-                        var stake2 = totalBankroll - stake1;
-
-                        // Calculate profit for each outcome
-                        var profitIfOutcome1 = (stake1 * odds1) - totalBankroll;
-                        var profitIfOutcome2 = (stake2 * odds2) - totalBankroll;
-
-                        // Display the results
-                        newProfitOutcome1Display.innerHTML = 'Profit: ' + profitIfOutcome1.toFixed(2) + '%';
-                        newProfitOutcome2Display.innerHTML = 'Profit: ' + profitIfOutcome2.toFixed(2) + '%';
-                    }
-
-
-                    </script>
                 </div>
             </div>
         </div>
@@ -959,28 +446,6 @@
         <div class="col-lg-4 {% if forloop.counter >= 0 %}{% if  not active %}blurred{% endif %}{% endif %}  ">
         
             <div class="card mb-3 " style="border-radius: 10px;height:275px" data-toggle="modal" data-target="#arbModal{{ forloop.counter }}" onclick="fetchAndRenderChart('{{ opportunity.id }}', '{{ opportunity.league }}', {{ forloop.counter }})">
-                <style>
-                    .blur-overlay {
-                        position: absolute;
-                        width: 100%;
-                        height: 100%;
-                        background: rgba(255, 255, 255, 0.8);
-                        display: flex;
-                        justify-content: center;
-                        align-items: center;
-                        cursor: pointer;
-                        padding:25px;
-                    }
-                    
-                    .lock-icon {
-                        width: 50px;
-                        height: 50px;
-                    }
-                    
-                    .blurred {
-                        filter: blur(5px);
-                    }
-                </style>
                 <div class="card-body ">
                     <center>
                         <h5 class="card-title" style="">{{opportunity.profit_percentage}}% at {{ opportunity.total_implied_odds }} {{ opportunity.hours_to_start }}h</h5>
@@ -995,23 +460,7 @@
                                     <img style="min-width:50px; max-width:75px; max-height: 50px; margin-bottom: 10px;" src="/static/predict/booklogo/{{ line.book }}.png" alt="{{ line.book }} logo">
                                 </div>
                                 
-                                <p class="team-name" style="text-align: center;">{{ line.team }}</p> <!-- Display team in one line -->
-                                <script>
-                                    // This script will find all paragraph elements with a class 'team-name',
-                                    // and replace their content with just the last word of their current content.
-                                    document.addEventListener('DOMContentLoaded', (event) => {
-                                      const teamElements = document.querySelectorAll('.team-name');
-                                      
-                                      teamElements.forEach((element) => {
-                                        let fullTeamName = element.textContent || element.innerText;
-                                        let teamNameParts = fullTeamName.trim().split(' ');
-                                        let lastWord = teamNameParts[teamNameParts.length - 1];
-                                        let shortenedWord = lastWord.substring(0, 8);
-
-                                        element.textContent = shortenedWord;
-                                      });
-                                    });
-                                    </script>
+                                <p class="team-name" style="text-align: center;">{{ line.team }}</p>
                                 <p style="text-align: center;">
                                     {{ line.stake_percentage | floatformat:2 }}% at {{ line.odds }}
                                 </p>
@@ -1055,37 +504,20 @@
 
     </div>
 </div>
-<script>
-    document.addEventListener('DOMContentLoaded', function() {
-        var apiKey = localStorage.getItem('apiKey');
-        if (apiKey) {
-            document.getElementById('message-input').value = apiKey;
-        }
-    });
 
-</script>
-<style>
-    .card:hover{
-        border: 1px solid rgb(177, 177, 177);
-        border-radius: 10px;
-    }
-    .card{
-        border: 1px solid transparent;
-        border-radius: 9px;
-    }
-
-    @media screen and (max-width: 994px) {
-        .lock-overlay{
-            margin-top:125vh !important
-        }
-        #calculator{
-           display:none !important
-        }
-        #rocket-emoji{
-            display:none !important
-        }
-    }
-</style>
 
 </div>
+<script>var ARB_ACTIVE = {{ active|yesno:"true,false" }};</script>
+{{ bookmakers_list|json_script:"arb-books-us" }}
+{{ au_books|json_script:"arb-books-au" }}
+{{ eu_books|json_script:"arb-books-eu" }}
+{{ uk_books|json_script:"arb-books-uk" }}
+<script>
+window.ARB_OPPORTUNITIES_DATA = [
+{% for opportunity in opportunities %}
+    {"counter": {{ forloop.counter }}, "odds1": {{ opportunity.lines.0.odds }}, "odds2": {{ opportunity.lines.1.odds }}}{% if not forloop.last %},{% endif %}
+{% endfor %}
+];
+</script>
+<script src="{% static 'predict/arb.js' %}"></script>
 {% endblock content %}

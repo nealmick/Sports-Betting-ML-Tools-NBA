@@ -1,0 +1,144 @@
+#welcomePopup .welcome-list {
+    padding-left: 20px !important;
+}
+
+#welcomePopup .welcome-list li {
+    list-style-type: disc !important;
+    display: list-item !important;
+}
+
+#welcomePopup {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 100000;
+}
+
+.popup-content {
+    color: var(--main-font-color) !important;
+    background: var(--main-modal-color) !important;
+    padding: 20px;
+    border-radius: 5px;
+}
+
+.spinner-container {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0, 0.8);
+    z-index: 9999;
+}
+
+.spinner {
+    border: 5px solid #f3f3f3;
+    border-top: 5px solid #E97827;
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    animation: spin 2s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+@media screen and (min-width: 750px) {
+    .mobile-info {
+        display: none !important;
+    }
+}
+
+@media screen and (max-width: 750px) {
+    .col-12 {
+        flex: 0 0 100%;
+        max-width: 100%;
+        padding-right: 0;
+        padding-left: 0;
+    }
+    .modal {
+        width: 100% !important;
+    }
+    .modal-dialog {
+        padding-left: 0px !important;
+        padding-right: 0px !important;
+        margin-right: 0px !important;
+        margin-left: 0px !important;
+        margin-bottom: 0px !important;
+    }
+    img {
+        max-width: 50px !important;
+    }
+    .desktop-odds {
+        display: none;
+    }
+    .mobile-team {
+        display: block;
+    }
+    .mobile-odds {
+        display: block;
+    }
+    .mobile-info {
+        display: inline !important;
+    }
+}
+
+.btn-grey-secondary:hover {
+    border: 1px solid #a5a5a5 !important;
+    background-color: #fc861e !important;
+}
+
+.blur-overlay {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    padding: 25px;
+}
+
+.lock-icon {
+    width: 50px;
+    height: 50px;
+}
+
+.blurred {
+    filter: blur(5px);
+}
+
+.card:hover {
+    border: 1px solid rgb(177, 177, 177);
+    border-radius: 10px;
+}
+
+.card {
+    border: 1px solid transparent;
+    border-radius: 9px;
+}
+
+@media screen and (max-width: 994px) {
+    .lock-overlay {
+        margin-top: 125vh !important;
+    }
+    #calculator {
+        display: none !important;
+    }
+    #rocket-emoji {
+        display: none !important;
+    }
+}

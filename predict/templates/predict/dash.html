@@ -10,87 +10,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-<style>
-
-@media screen and (max-width: 700px) {
-    #shop-btn, #header-label{
-        display: none !important;
-    } 
-  #nba-emoji{
-    margin-right:0px !important
-  }
-    #game-vs-display{
-        display:none !important;
-    }
-    #game-vs-mobile-display{
-        display:block !important;
-        margin-top: 35px !important;
-    }
-  #player-image{
-    height:85px !important;
-    margin-top:25px !important;
-  }
-   #player-display{
-        display:none;
-    }
-    
-}
-
-#myChart{
-  margin-top:10px;
-  max-height: 175px !important;
-}
-@media screen and (max-width: 1000px) {
-   
-  .top-stats{
-    display: none;
-  }
-  .lock-overlay{
-    margin-top:450px !important;
-  }
-}   .big-btn{
-      border: 1px solid rgba(198, 198, 198, 0.2);
-
-
-    }
-   .big-btn:hover{
-        border: 1px solid var(--main-border-color);
-        background-color: var(--event-hvr-background) !important;
-
-
-    }
-
-
-
-    .blur-overlay {
-        position: absolute;
-        width: 100%;
-        height: 100%;
-        background: rgba(255, 255, 255, 0.8);
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        cursor: pointer;
-        padding:25px;
-    }
-    
-    .lock-icon {
-        width: 50px;
-        height: 50px;
-    }
-    
-    .blurred {
-        filter: blur(4px);
-    }
-
-    .big-btn:hover{
-        background-color: rgba(172, 172, 172, 0.15) !important;
-
-
-    }
-
-
-</style>
+<link rel="stylesheet" href="{% static 'predict/dash.css' %}">
 <div id="player-display"class="col-lg-6 " style="padding:10px;margin-bottom: 0px;padding-bottom:0px;">
   <div class='content-section' style="min-height:320px;">
 
@@ -180,56 +100,7 @@
       <h3 style="display:inline">Trending</h3>
       <h5 style="float: right;display:inline;color:#6dac56 !important"><i class="fa-sharp fa-solid fa-up"></i> 23%</h5>
      <canvas id="myChart" width="600" height="300" style="margin-bottom:25px !important"></canvas>
-      <script>
-          const labels = ['Fanduel', 'DraftKings', 'BetMGM', 'Caesars'];
-          const data = {
-              labels: labels,
-              datasets: [
-                  {
-                      label: 'Trend',
-                      data: [65, -59, 80, -81],
-                      borderColor: "#fc861e",
-                      backgroundColor: 'rgba(252, 134, 30, 0.5)',
-                      borderWidth: 2,
-                      borderRadius: Number.MAX_VALUE, // Fully rounded corners
-                      borderSkipped: false,
-                      barPercentage: 0.5,
-                      categoryPercentage: 0.5,
-                  },
-                  {
-                      label: 'Trend',
-                      data: [28, 48, 40, 19,],
-                      backgroundColor: 'rgba(54, 162, 235, 0.5)',
-                      borderColor: 'rgb(54, 162, 235)',
-                      borderWidth: 2,
-                      borderRadius: 5, // Small corner radius
-                      borderSkipped: false,
-                      barPercentage: 0.5,
-                      categoryPercentage: 0.5,
-                  }
-              ]
-          };
-  
-          const config = {
-              type: 'bar',
-              data: data,
-              options: {
-                  indexAxis: 'y', // Makes the bar chart horizontal
-                  scales: {
-                      x: {
-                          beginAtZero: true,
-                      }
-                  },
-                  plugins: {
-                      legend: {
-                          display: false,
-                      }
-                  }
-              },
-          };
-  
-          var myChart = new Chart(document.getElementById('myChart'), config);
-      </script>
+      <script src="{% static 'predict/dash.js' %}"></script>
       
     </div>
   </div>
@@ -404,14 +275,6 @@
 
           <h2 style="margin-left:30px">No games found for the date selected.</h2>
 
-          <style>
-            #lock-sub{
-                display:none !important;
-            }
-            #games-div{
-              display:none !important;
-            }
-          </style>
     {% endfor %}
     
 
@@ -499,13 +362,5 @@
         document.getElementById("model-slot").onchange = displaySelectedStat;
     </script>
     </div>
-    <style>
-        #game:hover {
-          border: 1px solid var(--main-border-color);
-            background-color: var(--event-hvr-background) !important;
-
-        }
-
-    </style>
 
 {% endblock content%}

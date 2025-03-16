@@ -1,0 +1,69 @@
+.blur {
+  filter: blur(5px);
+}
+#welcomePopup .welcome-list {
+  padding-left: 20px !important;
+}
+
+#welcomePopup .welcome-list li {
+  list-style-type: disc !important;
+  display: list-item !important;
+}
+#welcomePopup {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 100000;
+}
+
+.popup-content {
+  background: white;
+  padding: 20px;
+  border-radius: 5px;
+}
+
+@media screen and (max-width: 600px) {
+  #team-logo {
+    height: 75px !important;
+  }
+}
+
+@media screen and (max-width: 1200px) {
+  .prof-stat {
+    padding-left: 0px !important;
+    padding-right: 0px !important;
+  }
+}
+.blur-overlay {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.8);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  padding: 25px;
+}
+
+.lock-icon {
+  width: 50px;
+  height: 50px;
+}
+
+.blurred {
+  filter: blur(3px);
+}
+
+.footer-btn {
+  background-color: rgba(0, 0, 0, 0) !important;
+}
+.footer-btn:hover {
+  background-color: rgba(0, 0, 0, 0.3) !important;
+}

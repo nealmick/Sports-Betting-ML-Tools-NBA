@@ -7,18 +7,7 @@
 
 {% block content%}
 
-{% if not active %}
-<script>
-    var shopLoad = localStorage.getItem('shopLoad');
 
-    if (shopLoad === null) {
-        // First time visit, set shopLoad to true for future visits
-        localStorage.setItem('shopLoad', true);
-        // Redirect to /autoshop/
-        //window.location.href = '/autoshop/';
-    }
-</script>
-{% endif %}
 <body class="row" style="overflow-x: hidden;">
 
 
@@ -50,74 +39,9 @@
 </div>
 
 
-<style>
-    .blur {
-      filter: blur(5px);
-  }
-  #welcomePopup .welcome-list {
-    padding-left: 20px !important; /* Adds space for bullets */
-}
+<link rel="stylesheet" href="{% static 'predict/home.css' %}">
 
-#welcomePopup .welcome-list li {
-    list-style-type: disc !important; /* Ensures bullets are shown */
-    display: list-item !important; /* Ensures list item display */
-}
-  #welcomePopup {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.5);
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      z-index: 100000;
-  }
-
-  .popup-content {
-      background: white;
-      padding: 20px;
-      border-radius: 5px;
-  }
- 
- 
-</style>
-  
-    
-
-<style>
-@media screen and (max-width: 600px) {
-    #team-logo{
-      height: 75px !important;
-
-    }
-
-    
-}
-</style>
-
-<script>
-  document.addEventListener("DOMContentLoaded", function() {
-
-    // Check if the welcome message has been shown
-    if (!localStorage.getItem('welcomeShown6')) {
-        // Show the popup and apply blur effect
-        //document.getElementById("welcomePopup").style.display = "flex";
-        //document.getElementById("mainContent").classList.add("blur");
-    }
-
-    // Add event listener to the close button
-    document.getElementById("closePopup").addEventListener("click", function() {
-        // Hide the popup and remove blur effect
-        document.getElementById("welcomePopup").style.display = "none";
-        document.getElementById("mainContent").classList.remove("blur");
-
-        // Set local storage item to indicate the message has been shown
-        localStorage.setItem('welcomeShown6', 'true');
-    });
-});
-</script>
+<script src="{% static 'predict/home.js' %}"></script>
 
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -599,46 +523,6 @@
 
 
 
-<style>
-  @media screen and (max-width: 1200px) {
-
-  .prof-stat{
-    padding-left:0px !important;
-    padding-right:0px !important;
-  }
-  }
-  .blur-overlay {
-      position: absolute;
-      width: 100%;
-      height: 100%;
-      background: rgba(255, 255, 255, 0.8);
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      cursor: pointer;
-      padding:25px;
-  }
-  
-  .lock-icon {
-      width: 50px;
-      height: 50px;
-  }
-  
-  .blurred {
-      filter: blur(3px);
-  }
-
-    
-    .footer-btn{
-    background-color:rgba(0,0,0,.0) !important
-
-    }
-     .footer-btn:hover{
-    background-color:rgba(0,0,0,.3) !important
-
-    }
-
-</style>
 
 
 
